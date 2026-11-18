@@ -1,9 +1,9 @@
 """
 Interactive Loan Default Prediction App
-Run with: streamlit run app/streamlit_app.py
+Run: streamlit run app/streamlit_app.py
 
-Supports both real and synthetic schemas based on the trained artifact,
-with Pydantic-backed input validation.
+CRITICAL: Form fields are driven exclusively by artifact['schema'] and
+artifact['feature_columns'] so real vs synthetic models never mismatch.
 """
 
 from __future__ import annotations
@@ -40,124 +40,81 @@ def get_model():
 artifact = get_model()
 
 st.title("💳 Loan Default Prediction & Credit Risk Intelligence")
-st.markdown(
-    "Enter applicant details in the sidebar and click **Predict Default Risk**. "
-    "Inputs are validated against the trained schema (real Lending Club or synthetic)."
-)
 
 if artifact is None:
     st.error(
-        "No trained model found. Please run:\n\n"
-        "```bash\npython -m src.models.train\n```"
+        "No trained model found. Train first:\n\n"
+        "```bash\n"
+        "python -m src.data.generate_data   # offline synthetic\n"
+        "# OR: python scripts/download_data.py\n"
+        "python -m src.models.train\n"
+        "```"
     )
     st.stop()
 
 pipeline = artifact["pipeline"]
-threshold = artifact["threshold"]
+threshold = float(artifact["threshold"])
 model_name = artifact["model_name"]
 schema = artifact.get("schema", "real")
+feature_columns = artifact.get("feature_columns") or []
+calibrated = artifact.get("calibrated", False)
+test_metrics = artifact.get("test_metrics") or {}
 
+st.markdown(
+    "Enter applicant details in the sidebar and click **Predict Default Risk**. "
+    f"Active schema is **`{schema}`** — the form only shows compatible fields."
+)
 st.caption(
-    f"Active model: **{model_name}**  |  Schema: **{schema}**  |  "
-    f"Decision threshold: **{threshold:.3f}**"
+    f"Model: **{model_name}** · Schema: **{schema}** · "
+    f"Threshold: **{threshold:.3f}** · Calibrated: **{calibrated}**"
 )
 
+if test_metrics:
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Test PR-AUC", f"{test_metrics.get('pr_auc', 0):.3f}")
+    c2.metric("Test Recall", f"{test_metrics.get('recall', 0):.3f}")
+    c3.metric("Test Precision", f"{test_metrics.get('precision', 0):.3f}")
+    c4.metric("Exp. loss / loan", f"${test_metrics.get('expected_loss_per_loan', 0):,.0f}")
+
 st.sidebar.header("Applicant Information")
-st.sidebar.caption(f"Form matches trained schema: `{schema}`")
+st.sidebar.success(f"Form locked to schema: `{schema}`")
 
 with st.sidebar.form("applicant_form"):
-    if schema == "real":
+    if schema == "synthetic":
         st.subheader("Loan Terms")
-        loan_amnt = st.number_input("Loan Amount ($)", min_value=1000, max_value=40000, value=12000, step=500)
-        term = st.selectbox("Term (months)", options=[36, 60], index=0)
+        loan_amnt = st.number_input("Loan Amount ($)", 1000, 40000, 15000, 500)
+        term = st.selectbox("Term (months)", [36, 60], index=0)
+        int_rate = st.slider("Interest Rate (%)", 5.0, 30.0, 12.5, 0.1)
+        installment = st.number_input("Installment ($)", 50.0, 2000.0, 350.0, 10.0)
 
         st.subheader("Borrower Profile")
-        annual_inc = st.number_input("Annual Income ($)", min_value=10000, max_value=500000, value=65000, step=1000)
-        emp_length = st.slider("Employment Length (years)", min_value=0, max_value=11, value=5)
-        home_ownership = st.selectbox("Home Ownership", options=["RENT", "MORTGAGE", "OWN", "OTHER"], index=1)
-        purpose = st.selectbox(
-            "Loan Purpose",
-            options=[
-                "debt_consolidation", "credit_card", "home_improvement",
-                "major_purchase", "small_business", "car", "medical",
-                "moving", "house", "other",
-            ],
-            index=0,
-        )
-
-        st.subheader("Credit & Risk Indicators")
-        grade = st.slider("Grade (numeric proxy, higher = better)", min_value=1.0, max_value=7.0, value=4.5, step=0.1)
-        dti = st.slider("Debt-to-Income Ratio", min_value=0.0, max_value=40.0, value=16.0, step=0.5)
-        payment_inc_ratio = st.slider("Payment / Income Ratio", min_value=0.5, max_value=30.0, value=8.0, step=0.5)
-        revol_bal = st.number_input("Revolving Balance ($)", min_value=0, max_value=200000, value=12000, step=500)
-        revol_util = st.slider("Revolving Utilization (%)", min_value=0.0, max_value=120.0, value=55.0, step=1.0)
-        open_acc = st.number_input("Open Credit Lines", min_value=1, max_value=50, value=10)
-        delinq_2yrs_zero = st.selectbox(
-            "No delinquencies in last 2 years?",
-            options=[1, 0],
-            format_func=lambda x: "Yes" if x == 1 else "No",
-        )
-        pub_rec_zero = st.selectbox(
-            "No public records?",
-            options=[1, 0],
-            format_func=lambda x: "Yes" if x == 1 else "No",
-        )
-        borrower_score = st.slider("Borrower Score (0–1)", min_value=0.0, max_value=1.0, value=0.55, step=0.05)
-
-        form_data = {
-            "loan_amnt": loan_amnt,
-            "term": term,
-            "annual_inc": annual_inc,
-            "dti": dti,
-            "payment_inc_ratio": payment_inc_ratio,
-            "revol_bal": revol_bal,
-            "revol_util": revol_util,
-            "purpose": purpose,
-            "home_ownership": home_ownership,
-            "delinq_2yrs_zero": delinq_2yrs_zero,
-            "pub_rec_zero": pub_rec_zero,
-            "open_acc": open_acc,
-            "grade": grade,
-            "emp_length": emp_length,
-            "borrower_score": borrower_score,
-        }
-    else:
-        st.subheader("Loan Terms")
-        loan_amnt = st.number_input("Loan Amount ($)", min_value=1000, max_value=40000, value=15000, step=500)
-        term = st.selectbox("Term (months)", options=[36, 60], index=0)
-        int_rate = st.slider("Interest Rate (%)", min_value=5.0, max_value=30.0, value=12.5, step=0.1)
-        installment = st.number_input("Installment ($)", min_value=50.0, max_value=2000.0, value=350.0, step=10.0)
-
-        st.subheader("Borrower Profile")
-        annual_inc = st.number_input("Annual Income ($)", min_value=10000, max_value=500000, value=72000, step=1000)
-        grade = st.selectbox("Grade", options=list("ABCDEFG"), index=2)
+        annual_inc = st.number_input("Annual Income ($)", 10000, 500000, 72000, 1000)
+        grade = st.selectbox("Grade", list("ABCDEFG"), index=2)
         emp_length = st.selectbox(
             "Employment Length",
-            options=[
+            [
                 "< 1 year", "1 year", "2 years", "3 years", "4 years", "5 years",
                 "6 years", "7 years", "8 years", "9 years", "10+ years",
             ],
             index=5,
         )
-        home_ownership = st.selectbox("Home Ownership", options=["RENT", "MORTGAGE", "OWN", "OTHER"], index=0)
+        home_ownership = st.selectbox("Home Ownership", ["RENT", "MORTGAGE", "OWN", "OTHER"], 0)
         purpose = st.selectbox(
             "Loan Purpose",
-            options=[
-                "debt_consolidation", "credit_card", "home_improvement",
-                "major_purchase", "small_business", "other",
-            ],
-            index=0,
+            ["debt_consolidation", "credit_card", "home_improvement",
+             "major_purchase", "small_business", "other"],
+            0,
         )
 
-        st.subheader("Credit & Risk Indicators")
-        dti = st.slider("Debt-to-Income Ratio", min_value=0.0, max_value=45.0, value=18.0, step=0.5)
-        fico_score = st.slider("FICO Score", min_value=300, max_value=850, value=710, step=5)
-        revol_util = st.slider("Revolving Utilization (%)", min_value=0.0, max_value=120.0, value=42.0, step=1.0)
-        open_acc = st.number_input("Open Credit Lines", min_value=1, max_value=50, value=9)
-        total_acc = st.number_input("Total Credit Lines", min_value=1, max_value=80, value=18)
-        delinq_2yrs = st.number_input("Delinquencies (2y)", min_value=0, max_value=10, value=0)
-        pub_rec = st.number_input("Public Records", min_value=0, max_value=10, value=0)
-        inq_last_6mths = st.number_input("Inquiries (6m)", min_value=0, max_value=15, value=1)
+        st.subheader("Credit Indicators")
+        dti = st.slider("DTI", 0.0, 45.0, 18.0, 0.5)
+        fico_score = st.slider("FICO Score", 300, 850, 710, 5)
+        revol_util = st.slider("Revolving Util %", 0.0, 120.0, 42.0, 1.0)
+        open_acc = st.number_input("Open Accounts", 1, 50, 9)
+        total_acc = st.number_input("Total Accounts", 1, 80, 18)
+        delinq_2yrs = st.number_input("Delinquencies (2y)", 0, 10, 0)
+        pub_rec = st.number_input("Public Records", 0, 10, 0)
+        inq_last_6mths = st.number_input("Inquiries (6m)", 0, 15, 1)
 
         form_data = {
             "loan_amnt": loan_amnt,
@@ -178,6 +135,62 @@ with st.sidebar.form("applicant_form"):
             "revol_util": revol_util,
             "total_acc": total_acc,
         }
+    else:
+        # real Lending Club schema
+        st.subheader("Loan Terms")
+        loan_amnt = st.number_input("Loan Amount ($)", 1000, 40000, 12000, 500)
+        term = st.selectbox("Term (months)", [36, 60], index=0)
+
+        st.subheader("Borrower Profile")
+        annual_inc = st.number_input("Annual Income ($)", 10000, 500000, 65000, 1000)
+        emp_length = st.slider("Employment Length (years)", 0, 11, 5)
+        home_ownership = st.selectbox("Home Ownership", ["RENT", "MORTGAGE", "OWN", "OTHER"], 1)
+        purpose = st.selectbox(
+            "Loan Purpose",
+            [
+                "debt_consolidation", "credit_card", "home_improvement",
+                "major_purchase", "small_business", "car", "medical",
+                "moving", "house", "other",
+            ],
+            0,
+        )
+
+        st.subheader("Credit Indicators")
+        grade = st.slider("Grade (1–7, higher better)", 1.0, 7.0, 4.5, 0.1)
+        dti = st.slider("DTI", 0.0, 40.0, 16.0, 0.5)
+        payment_inc_ratio = st.slider("Payment / Income", 0.5, 30.0, 8.0, 0.5)
+        revol_bal = st.number_input("Revolving Balance ($)", 0, 200000, 12000, 500)
+        revol_util = st.slider("Revolving Util %", 0.0, 120.0, 55.0, 1.0)
+        open_acc = st.number_input("Open Credit Lines", 1, 50, 10)
+        delinq_2yrs_zero = st.selectbox(
+            "No delinquencies in last 2 years?",
+            [1, 0],
+            format_func=lambda x: "Yes" if x == 1 else "No",
+        )
+        pub_rec_zero = st.selectbox(
+            "No public records?",
+            [1, 0],
+            format_func=lambda x: "Yes" if x == 1 else "No",
+        )
+        borrower_score = st.slider("Borrower Score (0–1)", 0.0, 1.0, 0.55, 0.05)
+
+        form_data = {
+            "loan_amnt": loan_amnt,
+            "term": term,
+            "annual_inc": annual_inc,
+            "dti": dti,
+            "payment_inc_ratio": payment_inc_ratio,
+            "revol_bal": revol_bal,
+            "revol_util": revol_util,
+            "purpose": purpose,
+            "home_ownership": home_ownership,
+            "delinq_2yrs_zero": delinq_2yrs_zero,
+            "pub_rec_zero": pub_rec_zero,
+            "open_acc": open_acc,
+            "grade": grade,
+            "emp_length": emp_length,
+            "borrower_score": borrower_score,
+        }
 
     submitted = st.form_submit_button("Predict Default Risk", use_container_width=True)
 
@@ -188,14 +201,24 @@ if submitted:
         st.error(f"Input validation failed: {e}")
         st.stop()
 
+    # Align columns to training order when available
+    if feature_columns:
+        missing = [c for c in feature_columns if c not in X_new.columns]
+        if missing:
+            st.error(
+                f"Schema mismatch after validation. Missing columns: {missing}. "
+                f"Retrain the model or switch data source so form and model match."
+            )
+            st.stop()
+        X_new = X_new[feature_columns]
+
     try:
         proba = float(pipeline.predict_proba(X_new)[0, 1])
     except Exception as e:
-        st.error(f"Prediction failed (schema mismatch?). Details: {e}")
+        st.error(f"Prediction failed: {e}")
         st.stop()
 
     prediction = int(proba >= threshold)
-
     if proba < 0.30:
         tier, color = "Low Risk", "green"
     elif proba < 0.55:
@@ -213,42 +236,32 @@ if submitted:
     )
 
     col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Default Probability", f"{proba:.1%}")
-    with col2:
-        st.metric("Predicted Class", "Default" if prediction else "Fully Paid")
-    with col3:
-        st.markdown("**Risk Tier**")
-        st.markdown(f":{color}[**{tier}**]")
-
+    col1.metric("Default Probability", f"{proba:.1%}")
+    col2.metric("Predicted Class", "Default" if prediction else "Fully Paid")
+    col3.markdown("**Risk Tier**")
+    col3.markdown(f":{color}[**{tier}**]")
     st.progress(min(proba, 1.0))
 
     st.subheader("Top risk drivers (SHAP)")
     try:
         from src.explainability.shap_analysis import compute_shap_values, top_shap_drivers
 
-        explainer, shap_vals, X_trans, feat_names = compute_shap_values(
-            pipeline, X_new, max_samples=1
-        )
+        _, shap_vals, _, feat_names = compute_shap_values(pipeline, X_new, max_samples=1)
         drivers = top_shap_drivers(shap_vals, feat_names, instance_idx=0, top_k=6)
-
         for name, val in drivers:
             direction = "increases" if val > 0 else "decreases"
             st.write(f"• **{name}**: SHAP = {val:+.4f} ({direction} default risk)")
     except Exception as e:
-        st.info(
-            "SHAP explanation unavailable for this prediction "
-            f"(fallback to heuristic). Reason: {type(e).__name__}"
-        )
+        st.info(f"SHAP unavailable ({type(e).__name__}). Heuristic drivers only.")
 
-    with st.expander("Monitoring snapshot"):
-        st.json(get_monitor().prediction_distribution(last_n=100))
+    with st.expander("Live monitoring"):
+        ref = artifact.get("reference_probas")
+        st.json(get_monitor().summary(reference_probas=ref))
 
 else:
-    st.info("← Fill in the applicant form and click **Predict Default Risk** to get a score.")
+    st.info("← Fill the form and click **Predict Default Risk**.")
 
 st.markdown("---")
 st.caption(
-    "Portfolio project · Dual schema · FastAPI available at /api · "
-    "Monitoring · SHAP · Streamlit · v1.1.0"
+    "Dual-schema · Calibrated probabilities · Business metrics · Drift monitoring · v1.2.0"
 )

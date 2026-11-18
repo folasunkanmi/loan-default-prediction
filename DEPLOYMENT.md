@@ -1,65 +1,59 @@
 # Deployment Guide
 
-## Local API
+## 1. Local
 
 ```bash
-# Train (if needed)
-python -m src.data.generate_data   # or scripts/download_data.py for real data
+pip install -r requirements.txt
+python -m src.data.generate_data          # or scripts/download_data.py
 python -m src.models.train
-
-# Run FastAPI
-pip install fastapi "uvicorn[standard]" pydantic
+streamlit run app/streamlit_app.py
+# API:
 uvicorn api.main:app --reload --port 8000
 ```
 
-Open docs: http://localhost:8000/docs
+## 2. Streamlit Community Cloud (recommended for recruiters)
 
-Example request:
+1. Push this repo to GitHub (public).
+2. Go to https://share.streamlit.io and sign in with GitHub.
+3. **New app** → select `folasunkanmi/loan-default-prediction`.
+4. Branch: `main` (or `feature/api-monitoring-tests-schema` until merged).
+5. Main file path: `app/streamlit_app.py`
+6. Advanced settings → Python 3.11.
+
+**Important for Cloud:** the app needs a trained model artifact.
+
+Option A – commit a small synthetic-trained model (demo):
 
 ```bash
-curl -X POST http://localhost:8000/predict \
-  -H "Content-Type: application/json" \
-  -d '{
-    "schema": "real",
-    "features": {
-      "loan_amnt": 12000,
-      "term": 36,
-      "annual_inc": 65000,
-      "dti": 16.0,
-      "payment_inc_ratio": 8.0,
-      "revol_bal": 12000,
-      "revol_util": 55.0,
-      "purpose": "debt_consolidation",
-      "home_ownership": "MORTGAGE",
-      "delinq_2yrs_zero": 1,
-      "pub_rec_zero": 1,
-      "open_acc": 10,
-      "grade": 4.5,
-      "emp_length": 5,
-      "borrower_score": 0.55
-    }
-  }'
+python -m src.data.generate_data
+python -m src.models.train
+# ensure models/best_pipeline.joblib is not gitignored for the demo
+# or train in a bootstrap script on startup (slower cold start)
 ```
 
-## Docker
+Option B – add a bootstrap in Streamlit that trains if missing (see README).
+
+After deploy, share the public URL (e.g. `https://loan-default-prediction.streamlit.app`).
+
+## 3. Docker
 
 ```bash
 docker build -t loan-default-api .
 docker run -p 8000:8000 loan-default-api
 ```
 
-## Live demo options
+## 4. Render / Railway
 
-1. **Render / Railway / Fly.io** – connect the GitHub repo, set start command:
-   `uvicorn api.main:app --host 0.0.0.0 --port $PORT`
-2. **Hugging Face Spaces** – Docker Space using this `Dockerfile`
-3. **Streamlit Community Cloud** – deploy `app/streamlit_app.py` for the interactive UI
+Start command:
 
-Health check path: `/health`  
-Monitoring summary: `/metrics`
+```text
+uvicorn api.main:app --host 0.0.0.0 --port $PORT
+```
 
-## Notes
+Health check: `/health`
 
-- The API validates inputs with Pydantic against the **trained schema** (`real` or `synthetic`).
-- Prediction distributions are logged under `reports/monitoring/predictions.jsonl`.
-- For production, mount a persistent volume for `models/` and `reports/` and disable build-time training if you ship a pre-trained artifact.
+## Schema note
+
+Streamlit and the API **always** use the schema stored in `models/best_pipeline.joblib`.
+Retrain on real data (`scripts/download_data.py`) or synthetic (`src.data.generate_data`)
+before scoring. Mixing forms and models causes the missing-columns error.
