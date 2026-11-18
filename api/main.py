@@ -1,14 +1,15 @@
 """
-FastAPI service exposing the trained loan-default model.
+FastAPI service for loan-default PD scoring.
 
-Run locally:
     uvicorn api.main:app --reload --port 8000
 
 Endpoints:
     GET  /health
     GET  /metrics
+    GET  /model/info
     POST /predict
     POST /predict/batch
+    POST /drift/scores
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -25,13 +26,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.models.train import load_best_model
+from src.monitoring.drift import detect_prediction_drift
 from src.monitoring.tracker import get_monitor
 from src.schemas.prediction import PredictionRequest, PredictionResponse, validate_and_build_row
 
+APP_VERSION = "1.2.0"
+
 app = FastAPI(
     title="Loan Default Prediction API",
-    description="REST API for probability-of-default scoring with dual-schema support.",
-    version="1.1.0",
+    description="REST API for probability-of-default scoring with dual-schema support, SHAP drivers, and monitoring.",
+    version=APP_VERSION,
 )
 
 app.add_middleware(
@@ -71,7 +75,6 @@ def startup() -> None:
     try:
         _load_artifact()
     except HTTPException:
-        # Allow API to boot without a model so /health still works in CI.
         pass
 
 
@@ -81,43 +84,73 @@ def health() -> Dict[str, Any]:
         art = _load_artifact()
         return {
             "status": "ok",
+            "api_version": APP_VERSION,
             "model_loaded": True,
             "model_name": art["model_name"],
             "schema": art.get("schema", "real"),
             "threshold": art["threshold"],
+            "calibrated": art.get("calibrated", False),
         }
     except HTTPException:
-        return {"status": "degraded", "model_loaded": False}
+        return {"status": "degraded", "api_version": APP_VERSION, "model_loaded": False}
+
+
+@app.get("/model/info")
+def model_info() -> Dict[str, Any]:
+    art = _load_artifact()
+    return {
+        "model_name": art["model_name"],
+        "schema": art.get("schema"),
+        "threshold": art["threshold"],
+        "calibrated": art.get("calibrated", False),
+        "calibration_method": art.get("calibration_method"),
+        "feature_columns": art.get("feature_columns"),
+        "test_metrics": art.get("test_metrics"),
+        "api_version": APP_VERSION,
+    }
 
 
 @app.get("/metrics")
 def metrics() -> Dict[str, Any]:
-    monitor = get_monitor()
-    return monitor.summary()
+    art = None
+    try:
+        art = _load_artifact()
+    except HTTPException:
+        pass
+    ref = art.get("reference_probas") if art else None
+    return get_monitor().summary(reference_probas=ref)
 
 
 @app.post("/predict", response_model=PredictionResponse)
-def predict(req: PredictionRequest) -> PredictionResponse:
+def predict(
+    req: PredictionRequest,
+    include_shap: bool = Query(default=True, description="Attach top SHAP drivers"),
+) -> PredictionResponse:
     art = _load_artifact()
-    schema = req.schema or art.get("schema", "real")
+    trained_schema = art.get("schema", "real")
+    schema = req.schema or trained_schema
     if schema not in ("real", "synthetic"):
         raise HTTPException(status_code=400, detail="schema must be 'real' or 'synthetic'")
+    if schema != trained_schema:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Request schema '{schema}' does not match trained model schema "
+                f"'{trained_schema}'."
+            ),
+        )
 
     try:
         X = validate_and_build_row(req.features, schema=schema)  # type: ignore[arg-type]
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Input validation failed: {exc}") from exc
 
-    # Schema mismatch guard: trained pipeline expects specific columns
-    trained_schema = art.get("schema", "real")
-    if schema != trained_schema:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Request schema '{schema}' does not match trained model schema "
-                f"'{trained_schema}'. Retrain on the desired schema or send matching features."
-            ),
-        )
+    feature_columns = art.get("feature_columns") or []
+    if feature_columns:
+        missing = [c for c in feature_columns if c not in X.columns]
+        if missing:
+            raise HTTPException(status_code=422, detail=f"Missing columns: {missing}")
+        X = X[feature_columns]
 
     try:
         proba = float(art["pipeline"].predict_proba(X)[0, 1])
@@ -137,6 +170,15 @@ def predict(req: PredictionRequest) -> PredictionResponse:
         risk_tier=tier,
     )
 
+    drivers = None
+    if include_shap:
+        try:
+            from src.explainability.shap_analysis import explain_instance
+
+            drivers = explain_instance(art["pipeline"], X, top_k=5)
+        except Exception:
+            drivers = None
+
     return PredictionResponse(
         default_probability=round(proba, 6),
         predicted_class=pred,
@@ -144,12 +186,14 @@ def predict(req: PredictionRequest) -> PredictionResponse:
         threshold=threshold,
         model_name=art["model_name"],
         schema=schema,
+        top_drivers=drivers,
     )
 
 
 class BatchRequest(BaseModel):
     schema: Optional[str] = None
     records: List[Dict[str, Any]] = Field(..., min_length=1, max_length=500)
+    include_shap: bool = False
 
 
 @app.post("/predict/batch")
@@ -157,11 +201,27 @@ def predict_batch(req: BatchRequest) -> Dict[str, Any]:
     results = []
     for i, feats in enumerate(req.records):
         try:
-            resp = predict(PredictionRequest(schema=req.schema, features=feats))  # type: ignore[arg-type]
+            resp = predict(
+                PredictionRequest(schema=req.schema, features=feats),  # type: ignore[arg-type]
+                include_shap=req.include_shap,
+            )
             results.append({"index": i, "ok": True, **resp.model_dump()})
         except HTTPException as exc:
             results.append({"index": i, "ok": False, "error": exc.detail})
     return {"n": len(results), "results": results}
+
+
+class DriftScoreRequest(BaseModel):
+    probabilities: List[float] = Field(..., min_length=10, max_length=50_000)
+
+
+@app.post("/drift/scores")
+def drift_scores(req: DriftScoreRequest) -> Dict[str, Any]:
+    art = _load_artifact()
+    ref = art.get("reference_probas") or []
+    if len(ref) < 10:
+        raise HTTPException(status_code=503, detail="No reference score distribution in artifact")
+    return detect_prediction_drift(ref, req.probabilities)
 
 
 if __name__ == "__main__":

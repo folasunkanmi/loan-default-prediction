@@ -1,9 +1,10 @@
 """
 SHAP explainability utilities.
 
-Supports:
-- Tree-based models (RandomForest, XGBoost, LightGBM) via TreeExplainer
-- Linear models (Logistic Regression) via LinearExplainer
+Handles:
+- Plain sklearn/imblearn pipelines
+- CalibratedClassifierCV wrappers (uses underlying estimator)
+- Tree models via TreeExplainer; linear via LinearExplainer; fallback KernelExplainer
 """
 
 from __future__ import annotations
@@ -15,9 +16,27 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import shap
-from sklearn.linear_model import LogisticRegression
 
 REPORTS_DIR = Path(__file__).resolve().parents[2] / "reports"
+
+
+def unwrap_pipeline(model: Any) -> Any:
+    """
+    Return the base imblearn/sklearn pipeline that has named_steps
+    preprocessor + classifier, even when wrapped by CalibratedClassifierCV.
+    """
+    # CalibratedClassifierCV (cv='prefit') stores the fitted estimator here
+    if hasattr(model, "calibrated_classifiers_") and model.calibrated_classifiers_:
+        inner = model.calibrated_classifiers_[0]
+        # sklearn >= 1.4 uses .estimator; older used .base_estimator
+        est = getattr(inner, "estimator", None) or getattr(inner, "base_estimator", None)
+        if est is not None:
+            return est
+    if hasattr(model, "estimator") and hasattr(model.estimator, "named_steps"):
+        return model.estimator
+    if hasattr(model, "base_estimator") and hasattr(model.base_estimator, "named_steps"):
+        return model.base_estimator
+    return model
 
 
 def _is_tree_model(model) -> bool:
@@ -31,43 +50,65 @@ def compute_shap_values(
     max_samples: int = 400,
 ) -> Tuple[Any, np.ndarray, np.ndarray, List[str]]:
     """
-    Compute SHAP values for a fitted pipeline.
+    Compute SHAP values for a fitted pipeline or calibrated wrapper.
 
     Returns
     -------
     explainer, shap_values, X_transformed, feature_names
     """
-    preprocessor = pipeline.named_steps["preprocessor"]
-    model = pipeline.named_steps["classifier"]
+    base = unwrap_pipeline(pipeline)
+    if not hasattr(base, "named_steps"):
+        raise ValueError(
+            "Cannot extract preprocessor/classifier from model. "
+            f"Got type={type(pipeline).__name__}"
+        )
+
+    preprocessor = base.named_steps["preprocessor"]
+    model = base.named_steps["classifier"]
     X_transformed = preprocessor.transform(X_sample)
+
+    if hasattr(X_transformed, "toarray"):
+        X_transformed = X_transformed.toarray()
+    X_transformed = np.asarray(X_transformed, dtype=float)
 
     if X_transformed.shape[0] > max_samples:
         rng = np.random.default_rng(42)
         idx = rng.choice(X_transformed.shape[0], max_samples, replace=False)
         X_transformed = X_transformed[idx]
 
-    # Recover feature names
     try:
         from src.features.preprocessing import get_feature_names
+
         feature_names = get_feature_names(preprocessor)
     except Exception:
+        feature_names = [f"f{i}" for i in range(X_transformed.shape[1])]
+
+    if len(feature_names) != X_transformed.shape[1]:
         feature_names = [f"f{i}" for i in range(X_transformed.shape[1])]
 
     if _is_tree_model(model):
         explainer = shap.TreeExplainer(model)
         shap_values = explainer.shap_values(X_transformed)
         if isinstance(shap_values, list):
-            shap_values = shap_values[1]  # positive class
+            shap_values = shap_values[1]
     else:
-        # Linear / other models
-        # Use a background sample for LinearExplainer
-        background = shap.sample(X_transformed, min(100, X_transformed.shape[0]), random_state=42)
-        explainer = shap.LinearExplainer(model, background)
-        shap_values = explainer.shap_values(X_transformed)
+        n_bg = min(100, X_transformed.shape[0])
+        background = shap.sample(X_transformed, n_bg, random_state=42)
+        try:
+            explainer = shap.LinearExplainer(model, background)
+            shap_values = explainer.shap_values(X_transformed)
+        except Exception:
+            # Slow but works for arbitrary models on small batches
+            explainer = shap.KernelExplainer(
+                model.predict_proba, background[: min(50, n_bg)]
+            )
+            raw = explainer.shap_values(X_transformed[: min(20, len(X_transformed))], nsamples=50)
+            shap_values = raw[1] if isinstance(raw, list) else raw
+
         if isinstance(shap_values, list):
             shap_values = shap_values[1]
 
-    return explainer, np.asarray(shap_values), X_transformed, feature_names
+    return explainer, np.asarray(shap_values, dtype=float), X_transformed, feature_names
 
 
 def top_shap_drivers(
@@ -76,16 +117,30 @@ def top_shap_drivers(
     instance_idx: int = 0,
     top_k: int = 5,
 ) -> List[Tuple[str, float]]:
-    """
-    Return the top-k features by absolute SHAP value for a single instance.
-    Each item is (feature_name, shap_value).
-    """
     if shap_values.ndim == 1:
         vals = shap_values
     else:
-        vals = shap_values[instance_idx]
+        vals = shap_values[min(instance_idx, shap_values.shape[0] - 1)]
     order = np.argsort(np.abs(vals))[::-1][:top_k]
-    return [(feature_names[i], float(vals[i])) for i in order]
+    return [(feature_names[i], float(vals[i])) for i in order if i < len(feature_names)]
+
+
+def explain_instance(
+    pipeline,
+    X_row: pd.DataFrame,
+    top_k: int = 6,
+) -> List[dict]:
+    """Convenience: return list of {feature, shap_value, direction}."""
+    _, shap_vals, _, feat_names = compute_shap_values(pipeline, X_row, max_samples=1)
+    drivers = top_shap_drivers(shap_vals, feat_names, instance_idx=0, top_k=top_k)
+    out = []
+    for name, val in drivers:
+        out.append({
+            "feature": name,
+            "shap_value": round(val, 6),
+            "direction": "increases_risk" if val > 0 else "decreases_risk",
+        })
+    return out
 
 
 def plot_shap_summary(
@@ -95,7 +150,6 @@ def plot_shap_summary(
     save: bool = True,
     filename: str = "shap_summary.png",
 ):
-    """Global feature importance via SHAP summary plot."""
     plt.figure(figsize=(10, 8))
     shap.summary_plot(
         shap_values,

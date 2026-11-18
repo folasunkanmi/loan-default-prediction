@@ -4,23 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loan-default-prediction"
-version = "1.1.0"
-description = "Production-ready loan default prediction and credit risk intelligence system using real Lending Club data."
+version = "1.2.0"
+description = "Production-ready loan default prediction and credit risk intelligence system."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
-authors = [
-    {name = "Folasunkanmi", email = ""}
-]
+authors = [{name = "Folasunkanmi"}]
 keywords = [
-    "credit-risk",
-    "loan-default",
-    "machine-learning",
-    "lending-club",
-    "shap",
-    "fintech",
-    "probability-of-default",
-    "fastapi",
+    "credit-risk", "loan-default", "machine-learning", "lending-club",
+    "shap", "fintech", "probability-of-default", "fastapi", "calibration",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -52,13 +44,12 @@ dependencies = [
 [project.optional-dependencies]
 app = ["streamlit>=1.28.0", "plotly>=5.18.0"]
 api = ["fastapi>=0.110.0", "uvicorn[standard]>=0.27.0", "httpx>=0.27.0"]
-dev = ["pytest>=7.4.0", "ruff>=0.1.0", "black>=23.0.0", "mypy>=1.5.0"]
+dev = ["pytest>=7.4.0", "ruff>=0.1.0", "black>=23.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/folasunkanmi/loan-default-prediction"
 Repository = "https://github.com/folasunkanmi/loan-default-prediction"
 Issues = "https://github.com/folasunkanmi/loan-default-prediction/issues"
-"Bug Tracker" = "https://github.com/folasunkanmi/loan-default-prediction/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

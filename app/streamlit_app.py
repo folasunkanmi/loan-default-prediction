@@ -3,7 +3,7 @@ Interactive Loan Default Prediction App
 Run: streamlit run app/streamlit_app.py
 
 Form fields are driven by artifact['schema'] so real vs synthetic never mismatch.
-On Streamlit Cloud, missing model artifacts are trained automatically from synthetic data.
+Threshold always comes from the trained artifact.
 """
 
 from __future__ import annotations
@@ -20,6 +20,8 @@ from app.bootstrap import ensure_model
 from src.models.train import load_best_model
 from src.monitoring.tracker import get_monitor
 from src.schemas.prediction import validate_and_build_row
+
+APP_VERSION = "1.2.0"
 
 st.set_page_config(
     page_title="Loan Default Risk Intelligence",
@@ -47,13 +49,12 @@ if artifact is None:
     st.error(
         "Could not load or train a model.\n\n"
         f"{st.session_state.get('_model_error', '')}\n\n"
-        "Locally run:\n"
-        "```bash\npython -m src.data.generate_data\npython -m src.models.train\n```"
+        "Locally run:\n```bash\npython -m src.data.generate_data\npython -m src.models.train\n```"
     )
     st.stop()
 
 pipeline = artifact["pipeline"]
-threshold = float(artifact["threshold"])
+threshold = float(artifact["threshold"])  # always from artifact
 model_name = artifact["model_name"]
 schema = artifact.get("schema", "real")
 feature_columns = artifact.get("feature_columns") or []
@@ -62,10 +63,10 @@ test_metrics = artifact.get("test_metrics") or {}
 
 st.markdown(
     "Enter applicant details in the sidebar and click **Predict Default Risk**. "
-    f"Active schema is **`{schema}`** — the form only shows compatible fields."
+    f"Form is locked to trained schema **`{schema}`**."
 )
 st.caption(
-    f"Model: **{model_name}** · Schema: **{schema}** · "
+    f"v{APP_VERSION} · Model: **{model_name}** · Schema: **{schema}** · "
     f"Threshold: **{threshold:.3f}** · Calibrated: **{calibrated}**"
 )
 
@@ -77,7 +78,7 @@ if test_metrics:
     c4.metric("Exp. loss / loan", f"${test_metrics.get('expected_loss_per_loan', 0):,.0f}")
 
 st.sidebar.header("Applicant Information")
-st.sidebar.success(f"Form locked to schema: `{schema}`")
+st.sidebar.success(f"Schema: `{schema}` · thr={threshold:.3f}")
 
 with st.sidebar.form("applicant_form"):
     if schema == "synthetic":
@@ -117,22 +118,12 @@ with st.sidebar.form("applicant_form"):
         inq_last_6mths = st.number_input("Inquiries (6m)", 0, 15, 1)
 
         form_data = {
-            "loan_amnt": loan_amnt,
-            "term": term,
-            "int_rate": int_rate,
-            "installment": installment,
-            "grade": grade,
-            "emp_length": emp_length,
-            "home_ownership": home_ownership,
-            "annual_inc": annual_inc,
-            "purpose": purpose,
-            "dti": dti,
-            "delinq_2yrs": delinq_2yrs,
-            "fico_score": fico_score,
-            "inq_last_6mths": inq_last_6mths,
-            "open_acc": open_acc,
-            "pub_rec": pub_rec,
-            "revol_util": revol_util,
+            "loan_amnt": loan_amnt, "term": term, "int_rate": int_rate,
+            "installment": installment, "grade": grade, "emp_length": emp_length,
+            "home_ownership": home_ownership, "annual_inc": annual_inc,
+            "purpose": purpose, "dti": dti, "delinq_2yrs": delinq_2yrs,
+            "fico_score": fico_score, "inq_last_6mths": inq_last_6mths,
+            "open_acc": open_acc, "pub_rec": pub_rec, "revol_util": revol_util,
             "total_acc": total_acc,
         }
     else:
@@ -146,11 +137,9 @@ with st.sidebar.form("applicant_form"):
         home_ownership = st.selectbox("Home Ownership", ["RENT", "MORTGAGE", "OWN", "OTHER"], 1)
         purpose = st.selectbox(
             "Loan Purpose",
-            [
-                "debt_consolidation", "credit_card", "home_improvement",
-                "major_purchase", "small_business", "car", "medical",
-                "moving", "house", "other",
-            ],
+            ["debt_consolidation", "credit_card", "home_improvement",
+             "major_purchase", "small_business", "car", "medical",
+             "moving", "house", "other"],
             0,
         )
 
@@ -162,33 +151,22 @@ with st.sidebar.form("applicant_form"):
         revol_util = st.slider("Revolving Util %", 0.0, 120.0, 55.0, 1.0)
         open_acc = st.number_input("Open Credit Lines", 1, 50, 10)
         delinq_2yrs_zero = st.selectbox(
-            "No delinquencies in last 2 years?",
-            [1, 0],
+            "No delinquencies in last 2 years?", [1, 0],
             format_func=lambda x: "Yes" if x == 1 else "No",
         )
         pub_rec_zero = st.selectbox(
-            "No public records?",
-            [1, 0],
+            "No public records?", [1, 0],
             format_func=lambda x: "Yes" if x == 1 else "No",
         )
         borrower_score = st.slider("Borrower Score (0–1)", 0.0, 1.0, 0.55, 0.05)
 
         form_data = {
-            "loan_amnt": loan_amnt,
-            "term": term,
-            "annual_inc": annual_inc,
-            "dti": dti,
-            "payment_inc_ratio": payment_inc_ratio,
-            "revol_bal": revol_bal,
-            "revol_util": revol_util,
-            "purpose": purpose,
-            "home_ownership": home_ownership,
-            "delinq_2yrs_zero": delinq_2yrs_zero,
-            "pub_rec_zero": pub_rec_zero,
-            "open_acc": open_acc,
-            "grade": grade,
-            "emp_length": emp_length,
-            "borrower_score": borrower_score,
+            "loan_amnt": loan_amnt, "term": term, "annual_inc": annual_inc,
+            "dti": dti, "payment_inc_ratio": payment_inc_ratio,
+            "revol_bal": revol_bal, "revol_util": revol_util, "purpose": purpose,
+            "home_ownership": home_ownership, "delinq_2yrs_zero": delinq_2yrs_zero,
+            "pub_rec_zero": pub_rec_zero, "open_acc": open_acc, "grade": grade,
+            "emp_length": emp_length, "borrower_score": borrower_score,
         }
 
     submitted = st.form_submit_button("Predict Default Risk", use_container_width=True)
@@ -235,19 +213,22 @@ if submitted:
     col2.metric("Predicted Class", "Default" if prediction else "Fully Paid")
     col3.markdown("**Risk Tier**")
     col3.markdown(f":{color}[**{tier}**]")
+    st.caption(f"Decision uses trained threshold = {threshold:.3f}")
     st.progress(min(proba, 1.0))
 
     st.subheader("Top risk drivers (SHAP)")
     try:
-        from src.explainability.shap_analysis import compute_shap_values, top_shap_drivers
+        from src.explainability.shap_analysis import explain_instance
 
-        _, shap_vals, _, feat_names = compute_shap_values(pipeline, X_new, max_samples=1)
-        drivers = top_shap_drivers(shap_vals, feat_names, instance_idx=0, top_k=6)
-        for name, val in drivers:
-            direction = "increases" if val > 0 else "decreases"
-            st.write(f"• **{name}**: SHAP = {val:+.4f} ({direction} default risk)")
+        drivers = explain_instance(pipeline, X_new, top_k=6)
+        for d in drivers:
+            arrow = "↑" if d["direction"] == "increases_risk" else "↓"
+            st.write(
+                f"• **{d['feature']}**: SHAP = {d['shap_value']:+.4f} "
+                f"({arrow} default risk)"
+            )
     except Exception as e:
-        st.info(f"SHAP unavailable ({type(e).__name__}).")
+        st.warning(f"SHAP unavailable: {type(e).__name__}: {e}")
 
     with st.expander("Live monitoring"):
         ref = artifact.get("reference_probas")
@@ -257,6 +238,4 @@ else:
     st.info("← Fill the form and click **Predict Default Risk**.")
 
 st.markdown("---")
-st.caption(
-    "Dual-schema · Calibrated probabilities · Business metrics · Drift monitoring · v1.2.0"
-)
+st.caption(f"Dual-schema · Calibrated PD · Business metrics · Drift monitoring · v{APP_VERSION}")
