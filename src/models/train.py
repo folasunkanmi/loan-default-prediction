@@ -5,7 +5,8 @@ Protocol
 --------
 - Stratified Train / Validation / Test
 - Model selection + threshold tuning on VALIDATION only
-- Probability calibration fitted on VALIDATION
+- Probability calibration fitted on a held-out calibration set without
+  refitting the base estimator (sklearn FrozenEstimator)
 - Test set evaluated once (final report)
 """
 
@@ -24,6 +25,7 @@ from imblearn.over_sampling import SMOTE
 from imblearn.pipeline import Pipeline as ImbPipeline
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.frozen import FrozenEstimator
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 
@@ -99,6 +101,35 @@ def _build_pipe(name: str, clf, schema: str, random_state: int) -> ImbPipeline:
     return ImbPipeline(steps=steps)
 
 
+def _calibrate_fitted_estimator(
+    fitted_estimator: Any,
+    X_cal,
+    y_cal,
+    method: str = "isotonic",
+) -> CalibratedClassifierCV:
+    """
+    Fit probability calibration on an already-trained estimator without refitting it.
+
+    Uses sklearn.frozen.FrozenEstimator (sklearn >= 1.6). CalibratedClassifierCV
+    only learns the calibration mapping on (X_cal, y_cal).
+    """
+    calibrator = CalibratedClassifierCV(
+        FrozenEstimator(fitted_estimator),
+        method=method,
+        cv=None,  # FrozenEstimator: no internal CV refit of the base model
+    )
+    calibrator.fit(X_cal, y_cal)
+    return calibrator
+
+
+def _resolve_preprocessor(model: Any):
+    """Extract ColumnTransformer from plain pipeline or calibrated/frozen wrappers."""
+    from src.explainability.shap_analysis import unwrap_pipeline
+
+    base = unwrap_pipeline(model)
+    return base.named_steps["preprocessor"]
+
+
 def train_all_models(
     test_size: float = 0.20,
     val_size: float = 0.20,
@@ -113,6 +144,7 @@ def train_all_models(
 
     X, y = prepare_xy(df)
 
+    # Hold out test first — never used for selection or threshold tuning
     X_temp, X_test, y_temp, y_test = train_test_split(
         X, y, test_size=test_size, stratify=y, random_state=random_state
     )
@@ -144,12 +176,10 @@ def train_all_models(
         pipe.fit(X_train, y_train)
 
         if calibrate:
-            # Calibrate on validation fold (prefit base estimator)
-            calibrator = CalibratedClassifierCV(
-                pipe, method=calibration_method, cv="prefit"
+            # Base model stays frozen; only calibration curve is fit on validation
+            model_for_pred = _calibrate_fitted_estimator(
+                pipe, X_val, y_val, method=calibration_method
             )
-            calibrator.fit(X_val, y_val)
-            model_for_pred = calibrator
         else:
             model_for_pred = pipe
 
@@ -176,7 +206,6 @@ def train_all_models(
             f"Loss/loan: {metrics['expected_loss_per_loan']:.1f} | thr={thr:.3f}"
         )
 
-    # Calibration plot on validation
     try:
         plot_calibration_curve(y_val, val_probas, filename="calibration_curve_val.png")
         plot_roc_pr_curves(y_val, val_probas, filename="roc_pr_curves_val.png")
@@ -187,7 +216,7 @@ def train_all_models(
     best_thr = thresholds[best_name]
     print(f"\nBest model on validation: {best_name} (PR-AUC={val_results[best_name]['pr_auc']:.4f})")
 
-    # Re-fit on Train+Val, then calibrate on a small holdout from trainval if possible
+    # Re-fit best model on Train+Val, calibrate on an internal holdout (still not test)
     X_trainval = pd.concat([X_train, X_val], axis=0)
     y_trainval = pd.concat([y_train, y_val], axis=0)
 
@@ -199,8 +228,9 @@ def train_all_models(
             X_trainval, y_trainval, test_size=0.2, stratify=y_trainval, random_state=random_state
         )
         base_pipe.fit(X_fit, y_fit)
-        final_model = CalibratedClassifierCV(base_pipe, method=calibration_method, cv="prefit")
-        final_model.fit(X_cal, y_cal)
+        final_model = _calibrate_fitted_estimator(
+            base_pipe, X_cal, y_cal, method=calibration_method
+        )
     else:
         base_pipe.fit(X_trainval, y_trainval)
         final_model = base_pipe
@@ -234,7 +264,6 @@ def train_all_models(
     except Exception as exc:
         print(f"Test plot warning: {exc}")
 
-    # Feature reference stats for drift monitoring
     ref_stats = {}
     for col in X_train.columns:
         if pd.api.types.is_numeric_dtype(X_train[col]):
@@ -248,20 +277,13 @@ def train_all_models(
             }
         else:
             vc = X_train[col].astype(str).value_counts(normalize=True)
-            ref_stats[col] = {
-                "frequencies": vc.to_dict(),
-                "type": "categorical",
-            }
+            ref_stats[col] = {"frequencies": vc.to_dict(), "type": "categorical"}
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Resolve feature names for SHAP when possible
     try:
-        if hasattr(final_model, "estimator"):
-            pre = final_model.estimator.named_steps["preprocessor"]
-        else:
-            pre = final_model.named_steps["preprocessor"]
+        pre = _resolve_preprocessor(final_model)
         feat_names = get_feature_names(pre)
     except Exception:
         feat_names = list(X.columns)

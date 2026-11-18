@@ -3,14 +3,14 @@ SHAP explainability utilities.
 
 Handles:
 - Plain sklearn/imblearn pipelines
-- CalibratedClassifierCV wrappers (uses underlying estimator)
-- Tree models via TreeExplainer; linear via LinearExplainer; fallback KernelExplainer
+- CalibratedClassifierCV + FrozenEstimator wrappers
+- Tree models via TreeExplainer; linear via LinearExplainer; KernelExplainer fallback
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -22,20 +22,35 @@ REPORTS_DIR = Path(__file__).resolve().parents[2] / "reports"
 
 def unwrap_pipeline(model: Any) -> Any:
     """
-    Return the base imblearn/sklearn pipeline that has named_steps
-    preprocessor + classifier, even when wrapped by CalibratedClassifierCV.
+    Return the base imblearn/sklearn pipeline with named_steps
+    (preprocessor + classifier), unwrapping calibration / frozen layers.
     """
-    # CalibratedClassifierCV (cv='prefit') stores the fitted estimator here
+    # FrozenEstimator (sklearn >= 1.6)
+    if type(model).__name__ == "FrozenEstimator" or hasattr(model, "estimator") and type(model).__name__ == "FrozenEstimator":
+        inner = getattr(model, "estimator", None)
+        if inner is not None:
+            return unwrap_pipeline(inner)
+
+    # CalibratedClassifierCV fitted state
     if hasattr(model, "calibrated_classifiers_") and model.calibrated_classifiers_:
         inner = model.calibrated_classifiers_[0]
-        # sklearn >= 1.4 uses .estimator; older used .base_estimator
         est = getattr(inner, "estimator", None) or getattr(inner, "base_estimator", None)
         if est is not None:
+            return unwrap_pipeline(est)
+
+    # CalibratedClassifierCV before / via .estimator
+    if hasattr(model, "estimator") and model.estimator is not None:
+        est = model.estimator
+        # Nested FrozenEstimator
+        if type(est).__name__ == "FrozenEstimator":
+            est = getattr(est, "estimator", est)
+        if hasattr(est, "named_steps"):
             return est
-    if hasattr(model, "estimator") and hasattr(model.estimator, "named_steps"):
-        return model.estimator
-    if hasattr(model, "base_estimator") and hasattr(model.base_estimator, "named_steps"):
-        return model.base_estimator
+        return unwrap_pipeline(est)
+
+    if hasattr(model, "base_estimator") and model.base_estimator is not None:
+        return unwrap_pipeline(model.base_estimator)
+
     return model
 
 
@@ -49,18 +64,11 @@ def compute_shap_values(
     X_sample: pd.DataFrame,
     max_samples: int = 400,
 ) -> Tuple[Any, np.ndarray, np.ndarray, List[str]]:
-    """
-    Compute SHAP values for a fitted pipeline or calibrated wrapper.
-
-    Returns
-    -------
-    explainer, shap_values, X_transformed, feature_names
-    """
     base = unwrap_pipeline(pipeline)
     if not hasattr(base, "named_steps"):
         raise ValueError(
             "Cannot extract preprocessor/classifier from model. "
-            f"Got type={type(pipeline).__name__}"
+            f"Got type={type(pipeline).__name__} unwrapped={type(base).__name__}"
         )
 
     preprocessor = base.named_steps["preprocessor"]
@@ -98,11 +106,12 @@ def compute_shap_values(
             explainer = shap.LinearExplainer(model, background)
             shap_values = explainer.shap_values(X_transformed)
         except Exception:
-            # Slow but works for arbitrary models on small batches
             explainer = shap.KernelExplainer(
                 model.predict_proba, background[: min(50, n_bg)]
             )
-            raw = explainer.shap_values(X_transformed[: min(20, len(X_transformed))], nsamples=50)
+            raw = explainer.shap_values(
+                X_transformed[: min(20, len(X_transformed))], nsamples=50
+            )
             shap_values = raw[1] if isinstance(raw, list) else raw
 
         if isinstance(shap_values, list):
@@ -130,17 +139,16 @@ def explain_instance(
     X_row: pd.DataFrame,
     top_k: int = 6,
 ) -> List[dict]:
-    """Convenience: return list of {feature, shap_value, direction}."""
     _, shap_vals, _, feat_names = compute_shap_values(pipeline, X_row, max_samples=1)
     drivers = top_shap_drivers(shap_vals, feat_names, instance_idx=0, top_k=top_k)
-    out = []
-    for name, val in drivers:
-        out.append({
+    return [
+        {
             "feature": name,
             "shap_value": round(val, 6),
             "direction": "increases_risk" if val > 0 else "decreases_risk",
-        })
-    return out
+        }
+        for name, val in drivers
+    ]
 
 
 def plot_shap_summary(
