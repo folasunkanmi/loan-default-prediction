@@ -2,8 +2,8 @@
 Interactive Loan Default Prediction App
 Run: streamlit run app/streamlit_app.py
 
-CRITICAL: Form fields are driven exclusively by artifact['schema'] and
-artifact['feature_columns'] so real vs synthetic models never mismatch.
+Form fields are driven by artifact['schema'] so real vs synthetic never mismatch.
+On Streamlit Cloud, missing model artifacts are trained automatically from synthetic data.
 """
 
 from __future__ import annotations
@@ -11,12 +11,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.bootstrap import ensure_model
 from src.models.train import load_best_model
 from src.monitoring.tracker import get_monitor
 from src.schemas.prediction import validate_and_build_row
@@ -32,8 +32,10 @@ st.set_page_config(
 @st.cache_resource
 def get_model():
     try:
+        ensure_model()
         return load_best_model()
-    except FileNotFoundError:
+    except Exception as exc:
+        st.session_state["_model_error"] = str(exc)
         return None
 
 
@@ -43,12 +45,10 @@ st.title("💳 Loan Default Prediction & Credit Risk Intelligence")
 
 if artifact is None:
     st.error(
-        "No trained model found. Train first:\n\n"
-        "```bash\n"
-        "python -m src.data.generate_data   # offline synthetic\n"
-        "# OR: python scripts/download_data.py\n"
-        "python -m src.models.train\n"
-        "```"
+        "Could not load or train a model.\n\n"
+        f"{st.session_state.get('_model_error', '')}\n\n"
+        "Locally run:\n"
+        "```bash\npython -m src.data.generate_data\npython -m src.models.train\n```"
     )
     st.stop()
 
@@ -136,7 +136,6 @@ with st.sidebar.form("applicant_form"):
             "total_acc": total_acc,
         }
     else:
-        # real Lending Club schema
         st.subheader("Loan Terms")
         loan_amnt = st.number_input("Loan Amount ($)", 1000, 40000, 12000, 500)
         term = st.selectbox("Term (months)", [36, 60], index=0)
@@ -201,14 +200,10 @@ if submitted:
         st.error(f"Input validation failed: {e}")
         st.stop()
 
-    # Align columns to training order when available
     if feature_columns:
         missing = [c for c in feature_columns if c not in X_new.columns]
         if missing:
-            st.error(
-                f"Schema mismatch after validation. Missing columns: {missing}. "
-                f"Retrain the model or switch data source so form and model match."
-            )
+            st.error(f"Schema mismatch. Missing columns: {missing}")
             st.stop()
         X_new = X_new[feature_columns]
 
@@ -252,7 +247,7 @@ if submitted:
             direction = "increases" if val > 0 else "decreases"
             st.write(f"• **{name}**: SHAP = {val:+.4f} ({direction} default risk)")
     except Exception as e:
-        st.info(f"SHAP unavailable ({type(e).__name__}). Heuristic drivers only.")
+        st.info(f"SHAP unavailable ({type(e).__name__}).")
 
     with st.expander("Live monitoring"):
         ref = artifact.get("reference_probas")
