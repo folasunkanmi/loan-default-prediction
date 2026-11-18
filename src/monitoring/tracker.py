@@ -1,8 +1,6 @@
 """
-Lightweight model monitoring:
-- Log prediction probabilities and metadata
-- Summarise prediction distributions
-- Simple population-stability / drift signals vs a reference window
+Lightweight prediction logging + distribution summaries.
+Integrates with drift helpers for score-distribution monitoring.
 """
 
 from __future__ import annotations
@@ -11,11 +9,13 @@ import json
 import threading
 import time
 from collections import deque
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional
 
 import numpy as np
+
+from src.monitoring.drift import detect_prediction_drift
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MONITOR_DIR = PROJECT_ROOT / "reports" / "monitoring"
@@ -34,8 +34,6 @@ class PredictionRecord:
 
 
 class PredictionMonitor:
-    """In-memory ring buffer + optional JSONL persistence."""
-
     def __init__(self, max_records: int = 5000, persist: bool = True):
         self._lock = threading.Lock()
         self._records: Deque[PredictionRecord] = deque(maxlen=max_records)
@@ -67,6 +65,13 @@ class PredictionMonitor:
                 with open(LOG_PATH, "a", encoding="utf-8") as f:
                     f.write(json.dumps(asdict(rec)) + "\n")
 
+    def recent_probas(self, last_n: Optional[int] = None) -> List[float]:
+        with self._lock:
+            records = list(self._records)
+        if last_n is not None:
+            records = records[-last_n:]
+        return [r.probability for r in records]
+
     def prediction_distribution(self, last_n: Optional[int] = None) -> Dict[str, Any]:
         with self._lock:
             records = list(self._records)
@@ -91,43 +96,22 @@ class PredictionMonitor:
             "histogram": np.histogram(probs, bins=10, range=(0, 1))[0].tolist(),
         }
 
-    def psi_vs_reference(
+    def score_drift_vs_reference(
         self,
-        reference_probs: List[float],
+        reference_probas: List[float],
         last_n: int = 500,
-        bins: int = 10,
     ) -> Dict[str, Any]:
-        """
-        Population Stability Index between a reference probability distribution
-        and the most recent live predictions. PSI > 0.25 often flags material drift.
-        """
-        with self._lock:
-            recent = list(self._records)[-last_n:]
-        if len(recent) < 30 or len(reference_probs) < 30:
-            return {"psi": None, "status": "insufficient_data"}
+        current = self.recent_probas(last_n)
+        return detect_prediction_drift(reference_probas, current)
 
-        live = np.array([r.probability for r in recent], dtype=float)
-        ref = np.clip(np.asarray(reference_probs, dtype=float), 1e-6, 1 - 1e-6)
-        edges = np.linspace(0, 1, bins + 1)
-
-        ref_hist, _ = np.histogram(ref, bins=edges)
-        live_hist, _ = np.histogram(live, bins=edges)
-        ref_pct = np.clip(ref_hist / max(ref_hist.sum(), 1), 1e-4, None)
-        live_pct = np.clip(live_hist / max(live_hist.sum(), 1), 1e-4, None)
-        psi = float(np.sum((live_pct - ref_pct) * np.log(live_pct / ref_pct)))
-
-        if psi < 0.1:
-            status = "stable"
-        elif psi < 0.25:
-            status = "moderate_shift"
-        else:
-            status = "significant_drift"
-
-        return {"psi": psi, "status": status, "bins": bins, "n_live": len(live)}
-
-    def summary(self) -> Dict[str, Any]:
-        dist = self.prediction_distribution()
-        return {"distribution": dist, "log_path": str(LOG_PATH) if self.persist else None}
+    def summary(self, reference_probas: Optional[List[float]] = None) -> Dict[str, Any]:
+        out: Dict[str, Any] = {
+            "distribution": self.prediction_distribution(),
+            "log_path": str(LOG_PATH) if self.persist else None,
+        }
+        if reference_probas:
+            out["score_drift"] = self.score_drift_vs_reference(reference_probas)
+        return out
 
 
 _monitor: Optional[PredictionMonitor] = None
