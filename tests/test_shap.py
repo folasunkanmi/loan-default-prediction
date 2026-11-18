@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
 from imblearn.pipeline import Pipeline as ImbPipeline
 from sklearn.linear_model import LogisticRegression
 

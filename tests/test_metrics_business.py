@@ -1,4 +1,4 @@
-"""Unit tests for business metrics and calibration helpers."""
+"""Unit tests for business metrics and drift helpers."""
 
 from __future__ import annotations
 
@@ -9,7 +9,11 @@ from src.evaluation.metrics import (
     expected_financial_loss,
     find_best_threshold,
 )
-from src.monitoring.drift import detect_prediction_drift, interpret_psi, psi_numeric
+from src.monitoring.drift import (
+    detect_feature_drift,
+    detect_prediction_drift,
+    score_prediction_drift_psi,
+)
 
 
 def test_evaluate_classification_bounds():
@@ -25,7 +29,7 @@ def test_evaluate_classification_bounds():
 
 def test_expected_financial_loss_positive():
     y = np.array([1, 1, 0, 0, 1])
-    p = np.array([0.1, 0.9, 0.8, 0.2, 0.3])  # FN and FP present
+    p = np.array([0.1, 0.9, 0.8, 0.2, 0.3])
     loss = expected_financial_loss(y, p, threshold=0.5, avg_loan_amount=10_000)
     assert loss["expected_loss_total"] > 0
     assert loss["false_negatives"] >= 1
@@ -39,15 +43,23 @@ def test_find_best_threshold_business():
     assert 0.1 <= t <= 0.85
 
 
-def test_psi_identical_is_low():
-    rng = np.random.default_rng(1)
-    x = rng.normal(0, 1, 500)
-    psi = psi_numeric(x, x.copy())
-    assert interpret_psi(psi) == "stable"
+def test_prediction_drift_stable_when_close():
+    ref = [0.2, 0.25, 0.3, 0.22, 0.28] * 10
+    cur = [0.21, 0.26, 0.29, 0.23, 0.27] * 10
+    d = detect_prediction_drift(ref, cur)
+    assert d["drift_detected"] is False
+    assert "drift_score" in d
 
 
-def test_prediction_drift_report():
+def test_psi_report_has_level():
     ref = list(np.random.default_rng(0).beta(2, 5, 200))
     cur = list(np.random.default_rng(1).beta(2, 5, 200))
-    report = detect_prediction_drift(ref, cur)
-    assert "psi" in report and "status" in report
+    report = score_prediction_drift_psi(ref, cur)
+    assert "psi" in report
+    assert report["level"] in {"no_change", "small_change", "large_change"}
+
+
+def test_feature_drift_api():
+    out = detect_feature_drift([1.0, 2.0, 3.0], [1.01, 2.02, 2.99])
+    assert "drift_detected" in out
+    assert out["drift_detected"] is False
