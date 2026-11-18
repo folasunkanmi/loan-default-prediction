@@ -1,12 +1,5 @@
 """
 Smoke and integration tests for the loan default prediction pipeline.
-
-Covers:
-- Synthetic data generation
-- Schema detection & preprocessing fit/transform
-- End-to-end training on synthetic data (all four models path)
-- Prediction on a new applicant row
-- No target leakage into feature lists
 """
 
 from __future__ import annotations
@@ -17,11 +10,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from imblearn.pipeline import Pipeline as ImbPipeline
 from sklearn.model_selection import train_test_split
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.data.generate_data import generate_loan_dataset
+from src.evaluation.metrics import evaluate_classification, find_best_threshold
 from src.features.preprocessing import (
     TARGET,
     build_preprocessor,
@@ -30,8 +25,7 @@ from src.features.preprocessing import (
     prepare_xy,
     set_feature_lists,
 )
-from src.models.train import _get_models, evaluate_model, find_best_threshold
-from imblearn.pipeline import Pipeline as ImbPipeline
+from src.models.train import _get_models
 
 
 @pytest.fixture(scope="module")
@@ -69,6 +63,7 @@ def test_preprocessor_fit_transform(synthetic_df):
 
 def test_no_target_leakage():
     from src.features import preprocessing as pp
+
     set_feature_lists("synthetic")
     assert TARGET not in pp.NUMERIC_FEATURES
     assert TARGET not in pp.CATEGORICAL_FEATURES
@@ -78,7 +73,6 @@ def test_no_target_leakage():
 
 
 def test_end_to_end_synthetic_training(synthetic_df):
-    """Train one model on synthetic data and produce predictions."""
     X, y = prepare_xy(synthetic_df)
     X_tr, X_te, y_tr, y_te = train_test_split(
         X, y, test_size=0.25, stratify=y, random_state=42
@@ -96,13 +90,13 @@ def test_end_to_end_synthetic_training(synthetic_df):
     assert np.all((proba >= 0) & (proba <= 1))
 
     thr = find_best_threshold(y_te, proba)
-    metrics = evaluate_model(y_te, proba, thr)
+    metrics = evaluate_classification(y_te, proba, thr)
     assert 0.0 <= metrics["roc_auc"] <= 1.0
     assert 0.0 <= metrics["f1"] <= 1.0
+    assert "pr_auc" in metrics
 
 
 def test_prediction_on_new_applicant(synthetic_df):
-    """Simulate a single new applicant after training."""
     X, y = prepare_xy(synthetic_df)
     pipe = ImbPipeline([
         ("preprocessor", build_preprocessor(schema="synthetic")),
@@ -110,7 +104,6 @@ def test_prediction_on_new_applicant(synthetic_df):
     ])
     pipe.fit(X, y)
 
-    # One-row DataFrame with the same columns
     new_row = X.iloc[[0]].copy()
     proba = pipe.predict_proba(new_row)[0, 1]
     pred = int(proba >= 0.5)
