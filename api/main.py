@@ -10,10 +10,15 @@ Endpoints:
     POST /predict
     POST /predict/batch
     POST /drift/scores
+
+CORS:
+    Default allow_origins=["*"] with allow_credentials=False.
+    Set CORS_ALLOW_ORIGINS to a comma-separated list for production.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -25,12 +30,13 @@ from pydantic import BaseModel, Field
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.config.settings import RISK_LOW, RISK_MEDIUM, VERSION
 from src.models.train import load_best_model
 from src.monitoring.drift import detect_prediction_drift
 from src.monitoring.tracker import get_monitor
 from src.schemas.prediction import PredictionRequest, PredictionResponse, validate_and_build_row
 
-APP_VERSION = "1.2.0"
+APP_VERSION = VERSION
 
 app = FastAPI(
     title="Loan Default Prediction API",
@@ -38,10 +44,20 @@ app = FastAPI(
     version=APP_VERSION,
 )
 
+# CORS: wildcard origins are incompatible with credentialed requests.
+# Prefer CORS_ALLOW_ORIGINS (comma-separated) for production; default is permissive demo mode.
+_cors_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "*").strip()
+_cors_origins = (
+    ["*"]
+    if _cors_origins_env == "*"
+    else [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+)
+_cors_credentials = False if _cors_origins == ["*"] else True
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -63,9 +79,10 @@ def _load_artifact() -> Dict[str, Any]:
 
 
 def _risk_tier(proba: float) -> str:
-    if proba < 0.30:
+    """Classify PD into risk tiers using centralized cutoffs (exclusive upper bounds)."""
+    if proba < RISK_LOW:
         return "Low Risk"
-    if proba < 0.55:
+    if proba < RISK_MEDIUM:
         return "Medium Risk"
     return "High Risk"
 
@@ -175,7 +192,10 @@ def predict(
         try:
             from src.explainability.shap_analysis import explain_instance
 
-            drivers = explain_instance(art["pipeline"], X, top_k=5)
+            bg = art.get("shap_background")
+            drivers = explain_instance(
+                art["pipeline"], X, top_k=5, background=bg
+            )
         except Exception:
             drivers = None
 
