@@ -3,78 +3,65 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
-
-import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 
-_KNOWN_OUTCOMES = {"default", "paid off"}
-
-_GRADE_MAP = {
-    "A": 7.0, "B": 6.0, "C": 5.0, "D": 4.0, "E": 3.0, "F": 2.0, "G": 1.0,
-}
-
-_EMP_LENGTH_MAP = {
-    "< 1 year": 0,
-    "1 year": 1,
-    "2 years": 2,
-    "3 years": 3,
-    "4 years": 4,
-    "5 years": 5,
-    "6 years": 6,
-    "7 years": 7,
-    "8 years": 8,
-    "9 years": 9,
-    "10+ years": 10,
-    "n/a": 0,
-    "NA": 0,
-}
+_GRADE_MAP = {"A": 7, "B": 6, "C": 5, "D": 4, "E": 3, "F": 2, "G": 1}
 
 
-def _normalize_term(series: pd.Series) -> pd.Series:
-    if pd.api.types.is_numeric_dtype(series):
-        return series.astype(int)
-    s = series.astype(str).str.replace(" months", "", regex=False).str.strip()
-    return pd.to_numeric(s, errors="coerce").astype("Int64")
+def _normalize_real_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize common Lending Club text encodings into the model's numeric schema."""
+    df = df.copy()
+
+    if "term" in df.columns:
+        term = df["term"].astype(str).str.extract(r"(\d+)")[0]
+        df["term"] = pd.to_numeric(term, errors="coerce")
+
+    if "grade" in df.columns:
+        grade = df["grade"].astype(str).str.strip().str.upper()
+        mapped = grade.map(_GRADE_MAP)
+        df["grade"] = mapped.where(mapped.notna(), pd.to_numeric(grade, errors="coerce"))
+
+    if "emp_length" in df.columns:
+        emp = df["emp_length"].astype(str).str.strip().str.lower()
+        numeric = pd.to_numeric(emp, errors="coerce")
+        extracted = pd.to_numeric(emp.str.extract(r"(\d+(?:\.\d+)?)")[0], errors="coerce")
+        extracted = extracted.where(~emp.str.contains(r"<\s*1", regex=True), 0.5)
+        extracted = extracted.where(~emp.str.contains(r"10\s*\+", regex=True), 10.0)
+        df["emp_length"] = numeric.where(numeric.notna(), extracted)
+
+    numeric_columns = (
+        "borrower_score", "payment_inc_ratio", "annual_inc", "loan_amnt",
+        "dti", "revol_bal", "revol_util", "open_acc", "grade", "emp_length",
+        "delinq_2yrs_zero", "pub_rec_zero", "default",
+    )
+    for column in numeric_columns:
+        if column in df.columns:
+            df[column] = pd.to_numeric(df[column], errors="coerce")
+    return df
 
 
-def _normalize_grade(series: pd.Series) -> pd.Series:
-    if pd.api.types.is_numeric_dtype(series):
-        return series.astype(float)
-    mapped = series.astype(str).str.strip().str.upper().map(_GRADE_MAP)
-    if mapped.isna().any():
-        numeric = pd.to_numeric(series, errors="coerce")
-        mapped = mapped.fillna(numeric)
-    return mapped.astype(float)
-
-
-def _normalize_emp_length(series: pd.Series) -> pd.Series:
-    if pd.api.types.is_numeric_dtype(series):
-        return series.astype(float)
-    s = series.astype(str).str.strip()
-    mapped = s.map(_EMP_LENGTH_MAP)
-    if mapped.isna().any():
-        digits = s.str.extract(r"(\d+)", expand=False)
-        mapped = mapped.fillna(pd.to_numeric(digits, errors="coerce"))
-    return mapped.fillna(0).astype(float)
-
-
-def _normalize_outcome(series: pd.Series) -> pd.Series:
-    cleaned = series.astype(str).str.strip().str.lower()
-    unknown = set(cleaned.unique()) - _KNOWN_OUTCOMES - {"nan"}
-    if unknown:
-        raise ValueError(
-            f"Unknown outcome label(s) in Lending Club data: {sorted(unknown)}. "
-            f"Expected only {_KNOWN_OUTCOMES}."
-        )
-    return (cleaned == "default").astype(int)
+def _normalize_outcome(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert recognized outcome labels to binary default; fail on unknown labels."""
+    if "outcome" not in df.columns:
+        return df
+    labels = df["outcome"].astype(str).str.strip().str.lower()
+    default_mask = labels.str.contains(r"default|charged.?off|late", regex=True)
+    paid_mask = labels.str.contains(r"paid|fully paid", regex=True)
+    unknown = ~(default_mask | paid_mask)
+    if unknown.any():
+        examples = sorted(labels[unknown].unique())[:5]
+        raise ValueError(f"Unrecognized loan outcome labels: {examples}")
+    df = df.copy()
+    df["default"] = default_mask.astype(int)
+    return df
 
 
 def load_raw_data(filename: str = "loan_data_lc.csv") -> pd.DataFrame:
+    """Load the real sample (preferred), or fall back to generated synthetic data."""
     path = RAW_DIR / filename
     if not path.exists():
         alt = RAW_DIR / "loan_data.csv"
@@ -82,30 +69,25 @@ def load_raw_data(filename: str = "loan_data_lc.csv") -> pd.DataFrame:
             print(f"Warning: {filename} not found – using synthetic {alt.name}")
             return pd.read_csv(alt)
         raise FileNotFoundError(
-            f"Neither {path} nor {alt} found. "
-            "Download the real dataset or run `python -m src.data.generate_data`."
+            f"Neither {path} nor {alt} found. Download the real dataset or run "
+            "`python -m src.data.generate_data`."
         )
 
-    df = pd.read_csv(path)
-
+    df = _normalize_outcome(pd.read_csv(path))
     if "outcome" in df.columns:
-        df = df.copy()
-        df["default"] = _normalize_outcome(df["outcome"])
-        if "term" in df.columns:
-            df["term"] = _normalize_term(df["term"])
-        if "grade" in df.columns:
-            df["grade"] = _normalize_grade(df["grade"])
-        if "emp_length" in df.columns:
-            df["emp_length"] = _normalize_emp_length(df["emp_length"])
         keep = [
             "loan_amnt", "term", "annual_inc", "dti", "payment_inc_ratio",
             "revol_bal", "revol_util", "purpose", "home_ownership",
             "delinq_2yrs_zero", "pub_rec_zero", "open_acc", "grade",
             "emp_length", "borrower_score", "default",
         ]
-        keep = [c for c in keep if c in df.columns]
-        df = df[keep]
-        df = df.dropna(subset=["default"]).reset_index(drop=True)
+        df = df[[column for column in keep if column in df.columns]]
+
+    if "default" not in df.columns:
+        raise ValueError("Dataset must contain a 'default' target or recognized 'outcome' column.")
+    df = _normalize_real_features(df)
+    if df["default"].isna().any():
+        raise ValueError("Target 'default' contains missing or non-numeric values.")
     return df
 
 
