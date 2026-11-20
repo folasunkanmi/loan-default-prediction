@@ -1,9 +1,8 @@
 cff-version: 1.2.0
-message: If you use this software, please cite it.
-title: Loan Default Prediction & Credit Risk Intelligence
-version: 1.2.0
-date-released: "2026-11-18"
+message: "If you use this software, please cite it as below."
+title: "Loan Default Prediction & Credit Risk Intelligence"
+version: "1.2.2"
 authors:
-  - family-names: Folasunkanmi
+  - family-names: "Folasunkanmi"
 license: MIT
 repository-code: "https://github.com/folasunkanmi/loan-default-prediction"
