@@ -162,7 +162,7 @@ def predict(
     try:
         X = validate_and_build_row(req.features, schema=schema)  # type: ignore[arg-type]
     except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"Input validation failed: {exc}") from expc
+        raise HTTPException(status_code=422, detail=f"Input validation failed: {exc}") from exc
 
     feature_columns = art.get("feature_columns") or []
     if feature_columns:
