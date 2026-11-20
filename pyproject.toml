@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loan-default-prediction"
-version = "1.2.1"
+version = "1.2.2"
 description = "Production-oriented loan default prediction and credit risk intelligence system."
 readme = "README.md"
 requires-python = ">=3.10"
