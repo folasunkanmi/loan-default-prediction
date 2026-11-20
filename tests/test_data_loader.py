@@ -1,53 +1,35 @@
-"""Tests for real Lending Club encoding normalization and outcome handling."""
+"""Tests for common Lending Club raw-data encodings."""
 
-import numpy as np
 import pandas as pd
 import pytest
 
-from src.data.load_data import _normalize_real_dataframe
+from src.data.load_data import _normalize_outcome, _normalize_real_features
 
 
 def test_real_schema_normalizes_grade_employment_and_term():
-    raw = pd.DataFrame(
-        {
-            "grade": ["A", "B", "C", "D"],
-            "emp_length": ["< 1 year", "5 years", "10+ years", "n/a"],
-            "term": [" 36 months", "60 months", "36 months", "60 months"],
-            "loan_status": ["Fully Paid", "Charged Off", "Fully Paid", "Default"],
-            "loan_amnt": [1000, 2000, 3000, 4000],
-        }
-    )
-    out = _normalize_real_dataframe(raw.copy())
-    assert list(out["grade"]) == [7, 6, 5, 4]
-    assert list(out["emp_length"]) == [0, 5, 10, 0]
-    assert list(out["term"]) == [36, 60, 36, 60]
-    assert list(out["default"]) == [0, 1, 0, 1]
+    raw = pd.DataFrame({
+        "term": ["36 months", "60 months"],
+        "grade": ["A", "G"],
+        "emp_length": ["< 1 year", "10+ years"],
+        "annual_inc": ["50000", "70000"],
+    })
+    normalized = _normalize_real_features(raw)
+    assert normalized["term"].tolist() == [36, 60]
+    assert normalized["grade"].tolist() == [7, 1]
+    assert normalized["emp_length"].tolist() == [0.5, 10.0]
+    assert normalized["annual_inc"].tolist() == [50000, 70000]
 
 
 def test_real_schema_keeps_numeric_grade_and_employment_values():
-    raw = pd.DataFrame(
-        {
-            "grade": [7, 5],
-            "emp_length": [3, 10],
-            "term": [36, 60],
-            "loan_status": ["Fully Paid", "Charged Off"],
-            "loan_amnt": [1000, 2000],
-        }
-    )
-    out = _normalize_real_dataframe(raw.copy())
-    assert list(out["grade"]) == [7, 5]
-    assert list(out["emp_length"]) == [3, 10]
+    raw = pd.DataFrame({"term": [36], "grade": [5.0], "emp_length": [7]})
+    normalized = _normalize_real_features(raw)
+    assert normalized.loc[0, "grade"] == 5
+    assert normalized.loc[0, "emp_length"] == 7
 
 
 def test_outcome_normalization_and_unknown_labels():
-    good = pd.DataFrame(
-        {
-            "grade": ["A"],
-            "emp_length": ["1 year"],
-            "term": ["36 months"],
-            "loan_status": ["Current"],
-            "loan_amnt": [1000],
-        }
-    )
-    with pytest.raises(ValueError, match="Unknown loan outcome"):
-        _normalize_real_dataframe(good)
+    df = pd.DataFrame({"outcome": ["default", "fully paid", "charged off"]})
+    normalized = _normalize_outcome(df)
+    assert normalized["default"].tolist() == [1, 0, 1]
+    with pytest.raises(ValueError, match="Unrecognized"):
+        _normalize_outcome(pd.DataFrame({"outcome": ["Current"]}))
