@@ -18,6 +18,8 @@ CORS:
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 import os
 import sys
 from pathlib import Path
@@ -38,30 +40,6 @@ from src.schemas.prediction import PredictionRequest, PredictionResponse, valida
 
 APP_VERSION = VERSION
 
-app = FastAPI(
-    title="Loan Default Prediction API",
-    description="REST API for probability-of-default scoring with dual-schema support, SHAP drivers, and monitoring.",
-    version=APP_VERSION,
-)
-
-# CORS: wildcard origins are incompatible with credentialed requests.
-# Prefer CORS_ALLOW_ORIGINS (comma-separated) for production; default is permissive demo mode.
-_cors_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "*").strip()
-_cors_origins = (
-    ["*"]
-    if _cors_origins_env == "*"
-    else [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
-)
-_cors_credentials = False if _cors_origins == ["*"] else True
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=_cors_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 _artifact: Optional[Dict[str, Any]] = None
 
 
@@ -78,21 +56,45 @@ def _load_artifact() -> Dict[str, Any]:
     return _artifact
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    try:
+        _load_artifact()
+    except HTTPException:
+        pass
+    yield
+
+
+app = FastAPI(
+    title="Loan Default Prediction API",
+    description="REST API for probability-of-default scoring with dual-schema support, SHAP drivers, and monitoring.",
+    version=APP_VERSION,
+    lifespan=_lifespan,
+)
+
+_cors_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "*").strip()
+_cors_origins = (
+    ["*"]
+    if _cors_origins_env == "*"
+    else [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+)
+_cors_credentials = False if _cors_origins == ["*"] else True
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_credentials,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 def _risk_tier(proba: float) -> str:
-    """Classify PD into risk tiers using centralized cutoffs (exclusive upper bounds)."""
     if proba < RISK_LOW:
         return "Low Risk"
     if proba < RISK_MEDIUM:
         return "Medium Risk"
     return "High Risk"
-
-
-@app.on_event("startup")
-def startup() -> None:
-    try:
-        _load_artifact()
-    except HTTPException:
-        pass
 
 
 @app.get("/health")
@@ -145,7 +147,7 @@ def predict(
 ) -> PredictionResponse:
     art = _load_artifact()
     trained_schema = art.get("schema", "real")
-    schema = req.schema or trained_schema
+    schema = getattr(req, "data_schema", None) or getattr(req, "schema", None) or trained_schema
     if schema not in ("real", "synthetic"):
         raise HTTPException(status_code=400, detail="schema must be 'real' or 'synthetic'")
     if schema != trained_schema:
@@ -160,7 +162,7 @@ def predict(
     try:
         X = validate_and_build_row(req.features, schema=schema)  # type: ignore[arg-type]
     except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"Input validation failed: {exc}") from exc
+        raise HTTPException(status_code=422, detail=f"Input validation failed: {exc}") from expc
 
     feature_columns = art.get("feature_columns") or []
     if feature_columns:
@@ -193,9 +195,7 @@ def predict(
             from src.explainability.shap_analysis import explain_instance
 
             bg = art.get("shap_background")
-            drivers = explain_instance(
-                art["pipeline"], X, top_k=5, background=bg
-            )
+            drivers = explain_instance(art["pipeline"], X, top_k=5, background=bg)
         except Exception:
             drivers = None
 
