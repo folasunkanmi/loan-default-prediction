@@ -1,53 +1,71 @@
 {
   "test": {
-    "model": "random_forest",
-    "threshold": 0.38,
-    "accuracy": 0.6436211269158673,
-    "precision": 0.598816029143898,
-    "recall": 0.8700926334362594,
-    "f1": 0.7094047833123539,
-    "roc_auc": 0.7334706437068159,
-    "pr_auc": 0.7170333959271515,
-    "brier": 0.2099902626213013,
-    "tn": 1892,
-    "fp": 2643,
-    "fn": 589,
-    "tp": 3945
+    "model": "logistic_regression",
+    "threshold": 0.34,
+    "accuracy": 0.6164957547689933,
+    "precision": 0.57280750137893,
+    "recall": 0.9161887957653286,
+    "f1": 0.7049041235363991,
+    "roc_auc": 0.7308853990114628,
+    "pr_auc": 0.70904858927541,
+    "brier": 0.21033253611919656,
+    "tn": 1437,
+    "fp": 3098,
+    "fn": 380,
+    "tp": 4154,
+    "calibrated": true
   },
   "validation": {
     "logistic_regression": {
-      "roc_auc": 0.7209606797884803,
-      "pr_auc": 0.709899379599968,
-      "precision": 0.5768571428571428,
-      "recall": 0.8904079382579934,
-      "f1": 0.7001300390117036,
-      "best_threshold": 0.33
+      "roc_auc": 0.7230454549212638,
+      "pr_auc": 0.7059988387165281,
+      "precision": 0.580211196296832,
+      "recall": 0.8844542447629548,
+      "f1": 0.700733752620545,
+      "brier": 0.21189561621795736,
+      "best_threshold": 0.34,
+      "expected_loss_per_loan": 1461.3298048296394,
+      "calibrated": true
     },
     "random_forest": {
-      "roc_auc": 0.7255808739456727,
-      "pr_auc": 0.7106388149291065,
-      "precision": 0.5921131848284166,
-      "recall": 0.8674751929437706,
-      "f1": 0.7038196618659988,
-      "best_threshold": 0.38
+      "roc_auc": 0.7277253231616663,
+      "pr_auc": 0.7042243460013868,
+      "precision": 0.5804285714285714,
+      "recall": 0.8959206174200661,
+      "f1": 0.7044646727351539,
+      "brier": 0.21015571543104947,
+      "best_threshold": 0.34,
+      "expected_loss_per_loan": 1401.786304995038,
+      "calibrated": true
     },
     "xgboost": {
-      "roc_auc": 0.7253110760837266,
-      "pr_auc": 0.707207459370443,
-      "precision": 0.6018935278596927,
-      "recall": 0.8551267916207277,
-      "f1": 0.7065039169247586,
-      "best_threshold": 0.36
+      "roc_auc": 0.7280063068745808,
+      "pr_auc": 0.7002364054658969,
+      "precision": 0.5955039227519614,
+      "recall": 0.8703417861080485,
+      "f1": 0.7071575741288184,
+      "brier": 0.21016402789314687,
+      "best_threshold": 0.35,
+      "expected_loss_per_loan": 1487.5289447568641,
+      "calibrated": true
     },
     "lightgbm": {
-      "roc_auc": 0.7211191784332903,
-      "pr_auc": 0.700855304456423,
-      "precision": 0.5879493223335298,
-      "recall": 0.8800441014332966,
-      "f1": 0.7049368541905855,
-      "best_threshold": 0.32
+      "roc_auc": 0.7232583508456746,
+      "pr_auc": 0.6974429363702022,
+      "precision": 0.5879411764705882,
+      "recall": 0.8815876515986769,
+      "f1": 0.7054256726951919,
+      "brier": 0.21175194422903532,
+      "best_threshold": 0.35,
+      "expected_loss_per_loan": 1452.0674826331458,
+      "calibrated": true
     }
   },
-  "selected_model": "random_forest",
-  "notes": "Metrics from Volume 1 real-data experiment (seed=42). Reproduce with scripts/download_data.py then python -m src.models.train on real schema."
+  "selected_model": "logistic_regression",
+  "schema": "real",
+  "n_train_val_test": [27204, 9069, 9069],
+  "n_total": 45342,
+  "default_rate": 0.5,
+  "seed": 42,
+  "notes": "Verified retrain 2026-11-20 on feature/volume-1-integration with real Lending Club sample; calibration=True (isotonic + FrozenEstimator). Champion selected by validation PR-AUC."
 }
