@@ -1,52 +1,56 @@
-# Model Card — Loan Default Prediction (Random Forest)
+# Model Card — Loan Default Prediction (Volume 1)
 
-## Model Details
+## Model details
 
-- **Developed by:** Folasunkanmi
-- **Model date:** November 2026
-- **Model version:** 1.2.0 (Volume 1 integration)
-- **Model type:** Random Forest Classifier (scikit-learn) inside an imbalanced-learn pipeline, with optional probability calibration
-- **License:** MIT
-- **Contact:** via GitHub repository
+| Field | Value |
+|-------|-------|
+| Developed by | Folasunkanmi |
+| Model date | November 2026 (re-verified 2026-11-20) |
+| Version | 1.2.x (integration branch) |
+| Type | Calibrated logistic regression inside imbalanced-learn pipeline |
+| License | MIT |
 
-## Intended Use
+## Intended use
 
-- Research and educational demonstration of probability-of-default modelling.
-- Portfolio / technical interview showcase.
-- Baseline for further credit-risk research.
-- API and Streamlit scoring demos with monitoring hooks.
+- Research / educational PD modelling demonstration  
+- Portfolio / interview technical showcase  
+- Baseline for further credit-risk work  
 
-**Out of scope:** Direct production underwriting without institution-specific retraining, calibration, governance and human oversight.
+**Out of scope:** Production underwriting without institution-specific data, governance, and human review.
 
-## Training Data
+## Training data
 
-- Real Lending Club cleaned sample (n = 45 342, balanced 50 % default).
-- Features known at or near origination.
+- Lending Club cleaned sample (`loan_data_lc.csv`), n = 45 342, ~50% default  
+- Features treated as available near origination in the cleaned schema  
 
-## Evaluation Data
+## Evaluation data
 
-Held-out stratified 20 % test set (n ≈ 9 069), never used for model or threshold selection.
+Held-out stratified 20% test set (n = 9 069). Never used for selection or threshold tuning.
 
-## Metrics (Test Set — Volume 1 reported)
+## Metrics (test set, verified re-run)
 
-| Metric    | Value |
-|-----------|-------|
-| ROC-AUC   | 0.733 |
-| PR-AUC    | 0.717 |
-| F1        | 0.709 |
-| Recall    | 0.870 |
-| Precision | 0.599 |
-| Brier     | 0.210 |
-| Threshold | 0.38  |
+| Metric | Value |
+|--------|-------|
+| ROC-AUC | 0.731 |
+| PR-AUC | 0.709 |
+| F1 | 0.705 |
+| Recall | 0.916 |
+| Precision | 0.573 |
+| Brier | 0.210 |
+| Accuracy | 0.616 |
+| Decision threshold | 0.34 |
+| Confusion (TN/FP/FN/TP) | 1437 / 3098 / 380 / 4154 |
 
-## Ethical Considerations
+Source: `reports/real_data_metrics.json` after `python -m src.models.train` with seed 42.
 
-- No protected attributes present in the public sample; fairness analysis limited.
-- Explanations are associative only.
-- High-stakes decisions require human review.
+## Ethical considerations
+
+- Public sample; limited fairness analysis (no protected attributes in schema).  
+- SHAP attributions are associative.  
+- High-stakes decisions require human oversight.
 
 ## Caveats
 
-- Balanced sample does not reflect production class imbalance.
-- Limited feature set compared with modern bureau + alternative data models.
-- Fixed hyper-parameters; further tuning possible.
+- Balanced sample ≠ production class prior.  
+- Calibration and threshold favour high recall (more false positives).  
+- Hyper-parameters fixed; further tuning possible.
