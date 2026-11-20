@@ -1,88 +1,149 @@
 # Loan Default Prediction & Credit Risk Intelligence
 
-[![CI](https://github.com/folasunkanmi/loan-default-prediction/actions/workflows/ci.yml/badge.svg)](https://github.com/folasunkanmi/loan-default-prediction/actions/workflows/ci.yml)
+[![CI](https://github.com/folasunkanmi/loan-default-prediction/actions/workflows/ci.yml/badge.svg?branch=feature/volume-1-integration)](https://github.com/folasunkanmi/loan-default-prediction/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.2.1-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.2-green.svg)](CHANGELOG.md)
 
-End-to-end credit-risk modelling system for **probability of default (PD)** scoring: dual data schemas, calibrated classifiers, business metrics, SHAP explanations, FastAPI scoring service, Streamlit demo, and drift monitoring.
+**End-to-end credit-risk system:** real Lending Club data · Train/Val/Test modelling · SHAP · Streamlit · FastAPI · monitoring · research documentation.
+
+| Field | Detail |
+|-------|--------|
+| **Roles demonstrated** | Data Scientist · ML Engineer · Applied AI |
+| **Domain** | Banking / FinTech / Credit risk |
+| **Task** | Binary PD (probability of default) |
+| **Data** | Real Lending Club cleaned sample (~45k) + synthetic offline fallback |
+| **Models** | Logistic Regression · Random Forest · XGBoost · LightGBM |
+| **Serving** | Streamlit app + FastAPI |
+| **Branch** | `feature/volume-1-integration` |
 
 ---
 
 ## Business problem
 
-Lenders need an estimate of whether a borrower will default. False negatives (approving a defaulter) drive credit loss; false positives (rejecting a good borrower) drive opportunity cost. This project trains models on either a **Lending Club–style sample** or **synthetic** data, tunes a decision threshold on validation only, and reports **expected financial loss** under a simple cost matrix.
+Lenders need an estimate of whether a borrower will default. **False negatives** (funding a defaulter) drive credit loss; **false positives** (declining a good borrower) drive opportunity cost. This project trains models under a leakage-free protocol, tunes the decision threshold on validation only, and surfaces scores via UI and API with SHAP explanations and basic drift monitoring.
 
-## Dataset
+---
 
-| Source | How to obtain |
-|--------|----------------|
-| Synthetic (offline demo) | `python -m src.data.generate_data` |
-| Real Lending Club sample | `python scripts/download_data.py` |
+## Volume 1 real-data results (documented)
 
-Schema is detected automatically (`real` vs `synthetic`). The Streamlit form and API **must** match the schema stored in `models/best_pipeline.joblib`.
+Logged in [`reports/real_data_metrics.json`](reports/real_data_metrics.json) from the Volume 1 experiment on the public Lending Club sample (seed 42). **Reproduce locally** with `scripts/download_data.py` then `python -m src.models.train`.
 
-## Methodology
+**Selected model:** Random Forest · **threshold:** 0.38
 
-1. Stratified **train / validation / test** split (test held out completely).
-2. Models: Logistic Regression (with SMOTE), Random Forest, XGBoost, LightGBM.
-3. Selection by **validation PR-AUC**; threshold by validation F1 (or business loss).
-4. **Probability calibration** via `CalibratedClassifierCV` + **`FrozenEstimator`** (sklearn ≥ 1.6) so the base model is not refit during calibration.
-5. Final refit on train+val with an internal calibration holdout; **one** evaluation on test.
-6. Artifact: pipeline, threshold, schema, feature columns, reference score distribution for drift.
+| Metric | Test value |
+|--------|------------|
+| ROC-AUC | 0.733 |
+| PR-AUC | 0.717 |
+| F1 | 0.709 |
+| Recall | 0.870 |
+| Precision | 0.599 |
+| Brier | 0.210 |
 
-### Example test metrics (synthetic run, seed 42)
+Validation comparison and SHAP drivers are described in [`docs/VOLUME_1_RESEARCH_PAPER.md`](docs/VOLUME_1_RESEARCH_PAPER.md).
 
-These are **illustrative** from a local synthetic train — re-run training for your environment and read `reports/model_comparison.json`:
+> Synthetic-only runs produce different metrics. Do not present synthetic numbers as real-data results.
 
-| Metric | Approx. value |
-|--------|----------------|
-| ROC-AUC | ~0.90 |
-| PR-AUC | ~0.70 |
-| Precision / Recall / F1 | depend on threshold |
-| Expected loss / loan | cost-matrix dependent |
-
-Do not treat table values as production guarantees.
+---
 
 ## Quick start
 
 ```bash
 git clone https://github.com/folasunkanmi/loan-default-prediction.git
 cd loan-default-prediction
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+git checkout feature/volume-1-integration
 
-python -m src.data.generate_data          # or: python scripts/download_data.py
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev,app,api]"
+
+# Real data (preferred for Volume 1)
+python scripts/download_data.py
 python -m src.models.train
+
+# Or offline synthetic
+# python -m src.data.generate_data && python -m src.models.train
+
 streamlit run app/streamlit_app.py
-# API:
 uvicorn api.main:app --reload --port 8000
+pytest tests/ -v
 ```
 
-Requires **Python 3.10+** and **scikit-learn ≥ 1.6** (`FrozenEstimator`).
+Requires **Python 3.10+** and **scikit-learn ≥ 1.6** (`FrozenEstimator` for calibration).
 
-## API
+---
+
+## Methodology (short)
+
+1. Stratified **Train / Validation / Test** (test never used for selection).
+2. Models: LR (+ SMOTE), RF, XGBoost, LightGBM.
+3. Select by **validation PR-AUC**; threshold by validation F1.
+4. Optional **probability calibration** with `CalibratedClassifierCV` + `FrozenEstimator`.
+5. Re-fit on Train+Val; **one** test evaluation.
+6. Artefact stores pipeline, threshold, schema, feature columns, reference scores for drift.
+
+---
+
+## Streamlit application
+
+- Form fields driven by trained **schema** (`real` vs `synthetic`).
+- **Threshold** always loaded from the artefact (not hardcoded 0.5).
+- Input validation via `src/schemas/prediction.py`.
+- SHAP top drivers when available.
+- Live monitoring expander.
+
+```bash
+streamlit run app/streamlit_app.py
+```
+
+---
+
+## FastAPI
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/health` | Liveness + model metadata |
 | GET | `/model/info` | Schema, threshold, test metrics |
-| GET | `/metrics` | Live prediction monitor summary |
-| POST | `/predict` | Single PD score (+ optional SHAP) |
+| GET | `/metrics` | Monitor summary |
+| POST | `/predict` | Single PD (+ optional SHAP) |
 | POST | `/predict/batch` | Batch scoring |
-| POST | `/drift/scores` | PSI-style score drift vs reference |
+| POST | `/drift/scores` | Score drift vs reference |
 
-Interactive docs: `http://localhost:8000/docs`
+Docs: `http://localhost:8000/docs`
 
-## SHAP explainability
+---
 
-`src/explainability/shap_analysis.py` unwraps calibrated / frozen estimators, runs TreeExplainer or LinearExplainer on the base classifier, and returns top drivers with **increases_risk / decreases_risk**. Streamlit and `/predict?include_shap=true` surface the same drivers.
+## Documentation map
 
-## Monitoring
+| Doc | Purpose |
+|------|---------|
+| [docs/VOLUME_1_RESEARCH_PAPER.md](docs/VOLUME_1_RESEARCH_PAPER.md) | Research write-up |
+| [docs/MODEL_CARD.md](docs/MODEL_CARD.md) | Model card |
+| [docs/TECHNICAL_DOCUMENTATION.md](docs/TECHNICAL_DOCUMENTATION.md) | Engineering details |
+| [docs/SYSTEM_ARCHITECTURE.md](docs/SYSTEM_ARCHITECTURE.md) | Architecture diagram |
+| [docs/DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md) | Feature definitions |
+| [docs/REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md) | Reproduce Volume 1 |
+| [docs/EXPERIMENT_LOG.md](docs/EXPERIMENT_LOG.md) | Experiment log |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Deploy notes |
 
-- Prediction JSONL log under `reports/monitoring/`
-- `detect_prediction_drift`, `score_prediction_drift_psi`, `detect_feature_drift`
-- Streamlit expander: live distribution + drift vs training reference scores
+---
+
+## Project layout
+
+```
+app/                 # Streamlit + bootstrap
+api/                 # FastAPI
+src/
+  data/ features/ models/ evaluation/
+  explainability/ monitoring/ schemas/ config/
+docs/                # Volume 1 research + technical docs
+reports/             # metrics JSON (figures after local train)
+scripts/download_data.py
+tests/
+.github/workflows/ci.yml
+Dockerfile  docker-compose.yml
+```
+
+---
 
 ## Testing & CI
 
@@ -91,37 +152,21 @@ pytest tests/ -v
 ruff check src tests api app
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`): install → ruff → synthetic generate → train smoke → pytest on Python **3.10** and **3.11**.
+GitHub Actions: install → synthetic smoke data → ruff → pytest on Python 3.10–3.12.
 
-## Docker
+---
 
-```bash
-docker compose up --build
-# API :8000  Streamlit :8501
-```
+## Limitations (honest)
 
-## Project layout
+- Public sample is **balanced**; production books are not.
+- Feature set is limited vs modern bureau + alternative data.
+- Plot PNGs / PDF paper under `reports/figures/` are generated when you run training locally; this branch ships **metrics JSON and markdown research**, not fabricated image binaries.
+- Not a certified credit decisioning system.
 
-```
-app/streamlit_app.py     # Interactive scoring UI (schema-locked form)
-api/main.py              # FastAPI service
-src/models/train.py      # Train + FrozenEstimator calibration
-src/evaluation/          # Metrics, calibration plots, business loss
-src/explainability/      # SHAP
-src/monitoring/          # Logs + PSI drift
-src/schemas/             # Pydantic dual-schema validation
-tests/
-.github/workflows/ci.yml
-```
-
-## Deployment notes
-
-Streamlit Community Cloud: point the app at `app/streamlit_app.py`. Cold start may train a small synthetic model via `app/bootstrap.py` if no artifact is present. See [DEPLOYMENT.md](DEPLOYMENT.md).
-
-**Status:** Feature branch is CI-oriented and locally verified for training + tests. Public Cloud URL depends on your Streamlit account deploy — this repo does not claim a live hosted demo unless you deploy one.
+---
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
 
-**Version 1.2.1 · November 2026**
+**Version 1.2.2 · `feature/volume-1-integration` · November 2026**
