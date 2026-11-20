@@ -12,12 +12,15 @@ REPORTS_DIR = PROJECT_ROOT / "reports"
 
 RANDOM_SEED = 42
 TEST_SIZE = 0.20
+VAL_SIZE = 0.20
 N_JOBS = -1
 
 CV_FOLDS = 5
 SMOTE_K_NEIGHBORS = 5
 
+# Decision thresholds for risk tiers (centralized; used by API + Streamlit)
 RISK_LOW = 0.30
 RISK_MEDIUM = 0.55
 
-VERSION = "1.0.0"
+# Package / app version — keep in sync with pyproject.toml, CITATION.cff, README
+VERSION = "1.2.2"
