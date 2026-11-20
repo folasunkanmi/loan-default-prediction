@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11"]
+        python-version: ["3.10", "3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +25,7 @@ jobs:
           pip install -e ".[dev,app,api]"
       - name: Generate small synthetic smoke data
         run: |
-          python -c "from src.data.generate_data import generate_synthetic_loan_data; generate_synthetic_loan_data(n_samples=2000, random_state=42)"
+          python -c "from src.data.generate_data import generate_loan_dataset; generate_loan_dataset(n_samples=2000, seed=42, save_path='data/raw/loan_data.csv')"
       - name: Lint
         run: ruff check src tests api app
       - name: Test
