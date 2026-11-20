@@ -20,8 +20,9 @@ from app.bootstrap import ensure_model
 from src.models.train import load_best_model
 from src.monitoring.tracker import get_monitor
 from src.schemas.prediction import validate_and_build_row
+from src.config.settings import VERSION
 
-APP_VERSION = "1.2.0"
+APP_VERSION = VERSION
 
 st.set_page_config(
     page_title="Loan Default Risk Intelligence",
