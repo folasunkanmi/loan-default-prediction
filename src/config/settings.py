@@ -17,7 +17,8 @@ N_JOBS = -1
 CV_FOLDS = 5
 SMOTE_K_NEIGHBORS = 5
 
+# Probability-of-default risk bands used by the Streamlit app
 RISK_LOW = 0.30
 RISK_MEDIUM = 0.55
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
