@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-11-22
+
+### Improved
+- **Streamlit application** completely rewritten for production use:
+  - Fully schema-aware (real Lending Club vs synthetic feature sets)
+  - Clean professional UI with risk tiers (Low / Medium / High)
+  - Displays model name, schema, decision threshold and test ROC-AUC
+  - Top SHAP drivers shown for each individual prediction
+  - All debug messages and temporary code removed
+- Central risk thresholds kept in `src/config/settings.py`
+- Version bumped to 1.1.0
+
+### Fixed
+- App no longer hard-codes synthetic inputs when a real-data model is loaded
+- Prediction results now respect the threshold that was optimised on the validation set
+
 ## [1.0.1] - 2026-11-17
 
 ### Fixed
@@ -38,5 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (via Practical Statistics for Data Scientists repository).
 - Fallback: synthetic generator mimicking realistic credit features and default relationships.
 
+[1.1.0]: https://github.com/folasunkanmi/loan-default-prediction/releases/tag/v1.1.0
 [1.0.1]: https://github.com/folasunkanmi/loan-default-prediction/releases/tag/v1.0.1
 [1.0.0]: https://github.com/folasunkanmi/loan-default-prediction/releases/tag/v1.0.0
