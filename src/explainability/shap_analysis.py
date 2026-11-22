@@ -3,7 +3,8 @@ SHAP explainability utilities.
 
 Supports:
 - Tree-based models (RandomForest, XGBoost, LightGBM) via TreeExplainer
-- Linear models (Logistic Regression) via LinearExplainer
+- Linear models (Logistic Regression) via LinearExplainer + coefficient fallback
+- KernelExplainer as last-resort fallback
 """
 
 from __future__ import annotations
@@ -23,6 +24,10 @@ REPORTS_DIR = Path(__file__).resolve().parents[2] / "reports"
 def _is_tree_model(model) -> bool:
     name = type(model).__name__.lower()
     return any(k in name for k in ("forest", "xgb", "lgbm", "lightgbm", "boosting", "tree"))
+
+
+def _is_linear_model(model) -> bool:
+    return isinstance(model, LogisticRegression) or "logistic" in type(model).__name__.lower()
 
 
 def compute_shap_values(
@@ -53,21 +58,48 @@ def compute_shap_values(
     except Exception:
         feature_names = [f"f{i}" for i in range(X_transformed.shape[1])]
 
+    # --- Tree models ---
     if _is_tree_model(model):
         explainer = shap.TreeExplainer(model)
         shap_values = explainer.shap_values(X_transformed)
         if isinstance(shap_values, list):
             shap_values = shap_values[1]  # positive class
-    else:
-        # Linear / other models
-        # Use a background sample for LinearExplainer
-        background = shap.sample(X_transformed, min(100, X_transformed.shape[0]), random_state=42)
-        explainer = shap.LinearExplainer(model, background)
-        shap_values = explainer.shap_values(X_transformed)
+        return explainer, np.asarray(shap_values), X_transformed, feature_names
+
+    # --- Linear models ---
+    if _is_linear_model(model):
+        try:
+            # LinearExplainer works best with a small background
+            n_bg = min(50, X_transformed.shape[0])
+            if X_transformed.shape[0] == 1:
+                # Single row → use coefficients as approximate importance
+                coefs = model.coef_.ravel()
+                # Approximate SHAP-like values = coefficient * feature value (centered roughly)
+                approx = coefs * X_transformed[0]
+                return None, approx.reshape(1, -1), X_transformed, feature_names
+
+            background = shap.sample(X_transformed, n_bg, random_state=42)
+            explainer = shap.LinearExplainer(model, background)
+            shap_values = explainer.shap_values(X_transformed)
+            if isinstance(shap_values, list):
+                shap_values = shap_values[1]
+            return explainer, np.asarray(shap_values), X_transformed, feature_names
+        except Exception:
+            # Fallback to coefficient * value
+            coefs = model.coef_.ravel()
+            approx = coefs * X_transformed
+            return None, np.asarray(approx), X_transformed, feature_names
+
+    # --- Last resort: KernelExplainer (slow but general) ---
+    try:
+        background = shap.sample(X_transformed, min(20, X_transformed.shape[0]), random_state=42)
+        explainer = shap.KernelExplainer(model.predict_proba, background)
+        shap_values = explainer.shap_values(X_transformed, nsamples=50)
         if isinstance(shap_values, list):
             shap_values = shap_values[1]
-
-    return explainer, np.asarray(shap_values), X_transformed, feature_names
+        return explainer, np.asarray(shap_values), X_transformed, feature_names
+    except Exception as e:
+        raise RuntimeError(f"Could not compute SHAP values: {e}") from e
 
 
 def top_shap_drivers(
@@ -80,12 +112,21 @@ def top_shap_drivers(
     Return the top-k features by absolute SHAP value for a single instance.
     Each item is (feature_name, shap_value).
     """
+    if shap_values is None or len(feature_names) == 0:
+        return []
+
     if shap_values.ndim == 1:
         vals = shap_values
     else:
         vals = shap_values[instance_idx]
+
+    # Safety: align lengths
+    n = min(len(vals), len(feature_names))
+    vals = vals[:n]
+    names = feature_names[:n]
+
     order = np.argsort(np.abs(vals))[::-1][:top_k]
-    return [(feature_names[i], float(vals[i])) for i in order]
+    return [(names[i], float(vals[i])) for i in order]
 
 
 def plot_shap_summary(
