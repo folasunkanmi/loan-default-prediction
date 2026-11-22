@@ -2,8 +2,8 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
 title: "Loan Default Prediction & Credit Risk Intelligence"
-version: "1.0.0"
-date-released: "2026-11-17"
+version: "1.1.0"
+date-released: "2026-11-22"
 authors:
   - family-names: "Folasunkanmi"
     given-names: ""
