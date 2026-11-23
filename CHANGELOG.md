@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-11-23
+
+### Fixed
+- **SHAP explanations for single-applicant predictions**:
+  - Root cause: `get_feature_names()` relied on module-level `NUMERIC_FEATURES` /
+    `CATEGORICAL_FEATURES` which default to the REAL schema. When the saved model
+    was trained on synthetic data, feature names were wrong (length mismatch and
+    incorrect labels such as `borrower_score`). The Streamlit app then either
+    showed incorrect drivers or fell into the silent exception path.
+  - `get_feature_names()` now prefers the fitted `ColumnTransformer.get_feature_names_out()`,
+    so names always match the preprocessor that actually produced the features.
+  - Streamlit passes the `feature_names` stored in the model artefact when available.
+  - Single-row Logistic Regression uses a clearly labelled coefficient × standardised
+    feature value approximation (not misrepresented as exact SHAP).
+  - Silent `except Exception: return None` replaced with logging of full traceback
+    and a user-friendly message; prediction / probability / risk tier always remain visible.
+- Risk bands imported from `src.config.settings` (values unchanged: 0.30 / 0.55).
+
+### Added
+- Comprehensive SHAP regression tests (`tests/test_shap.py`): feature-name alignment,
+  LR single-row approximation, TreeExplainer, dimensionality, failure fallback,
+  saved-artefact integration, risk direction.
+
 ## [1.1.0] - 2026-11-22
 
 ### Improved
@@ -54,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (via Practical Statistics for Data Scientists repository).
 - Fallback: synthetic generator mimicking realistic credit features and default relationships.
 
+[1.1.1]: https://github.com/folasunkanmi/loan-default-prediction/releases/tag/v1.1.1
 [1.1.0]: https://github.com/folasunkanmi/loan-default-prediction/releases/tag/v1.1.0
 [1.0.1]: https://github.com/folasunkanmi/loan-default-prediction/releases/tag/v1.0.1
 [1.0.0]: https://github.com/folasunkanmi/loan-default-prediction/releases/tag/v1.0.0
