@@ -80,8 +80,11 @@ def test_no_target_leakage():
 def test_end_to_end_synthetic_training(synthetic_df):
     """Train one model on synthetic data and produce predictions."""
     X, y = prepare_xy(synthetic_df)
-    X_tr, X_te, y_tr, y_te = train_test_split(
+    X_trainval, X_test, y_trainval, y_test = train_test_split(
         X, y, test_size=0.25, stratify=y, random_state=42
+    )
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_trainval, y_trainval, test_size=1 / 3, stratify=y_trainval, random_state=42
     )
 
     clf = _get_models(42)["logistic_regression"]
@@ -89,14 +92,17 @@ def test_end_to_end_synthetic_training(synthetic_df):
         ("preprocessor", build_preprocessor(schema="synthetic")),
         ("classifier", clf),
     ])
-    pipe.fit(X_tr, y_tr)
+    pipe.fit(X_train, y_train)
 
-    proba = pipe.predict_proba(X_te)[:, 1]
-    assert proba.shape == (len(X_te),)
-    assert np.all((proba >= 0) & (proba <= 1))
+    val_proba = pipe.predict_proba(X_val)[:, 1]
+    threshold = find_best_threshold(y_val, val_proba)
 
-    thr = find_best_threshold(y_te, proba)
-    metrics = evaluate_model(y_te, proba, thr)
+    pipe.fit(X_trainval, y_trainval)
+    test_proba = pipe.predict_proba(X_test)[:, 1]
+    assert test_proba.shape == (len(X_test),)
+    assert np.all((test_proba >= 0) & (test_proba <= 1))
+
+    metrics = evaluate_model(y_test, test_proba, threshold)
     assert 0.0 <= metrics["roc_auc"] <= 1.0
     assert 0.0 <= metrics["f1"] <= 1.0
 

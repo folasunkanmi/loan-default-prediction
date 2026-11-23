@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-11-23
+
+### Fixed
+- Repaired invalid `reports/model_comparison.json` conflict markers that caused CI to fail.
+- Validate dataset schema and target values; construct the real-data target only from
+  the documented `outcome` labels.
+- Exclude `borrower_score` from training and scoring because its point-in-time
+  availability is unclear and it may encode target information.
+- Fit preprocessing on the training data and reuse the saved pipeline for predictions.
+- Write the comparison report and test-set ROC/PR and confusion-matrix plots from the
+  reproducible real-data training run.
+
+### Changed
+- The real evaluation explicitly describes its input as a balanced curated sample and
+  disclaims generalization to real-world Lending Club lending performance.
+- Removed unverified performance claims and calibration assertions from documentation.
+- Bumped synchronized project metadata to 1.1.3.
+
 ## [1.1.2] - 2026-11-23
 
 ### Fixed
