@@ -7,13 +7,22 @@ Supports both real Lending Club and synthetic model artefacts.
 
 from __future__ import annotations
 
+import logging
 import pathlib
+import traceback
 from typing import Any, Dict, List, Optional, Tuple
 
 import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
+
+# Prefer centralised risk bands from config; fall back to local constants
+try:
+    from src.config.settings import RISK_LOW, RISK_MEDIUM
+except Exception:
+    RISK_LOW = 0.30
+    RISK_MEDIUM = 0.55
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -28,9 +37,7 @@ st.set_page_config(
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1]
 MODEL_PATH = PROJECT_ROOT / "models" / "best_pipeline.joblib"
 
-# Risk bands (probability of default)
-RISK_LOW = 0.30
-RISK_MEDIUM = 0.55
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -61,18 +68,37 @@ def get_risk_tier(proba: float) -> Tuple[str, str]:
 
 
 def try_shap_drivers(
-    pipeline, X_row: pd.DataFrame, top_k: int = 5
-) -> Optional[List[Tuple[str, float]]]:
-    """Attempt to compute top SHAP drivers for a single applicant."""
+    pipeline,
+    X_row: pd.DataFrame,
+    feature_names: Optional[List[str]] = None,
+    top_k: int = 6,
+) -> Tuple[Optional[List[Tuple[str, float]]], bool, Optional[str]]:
+    """
+    Attempt to compute top SHAP / attribution drivers for a single applicant.
+
+    Returns
+    -------
+    drivers : list of (feature, value) or None on failure
+    is_approximation : True when coefficient\u00d7value heuristic was used
+    error_message : short user-facing reason if failed, else None
+    """
     try:
         from src.explainability.shap_analysis import compute_shap_values, top_shap_drivers
 
-        explainer, shap_vals, X_trans, feat_names = compute_shap_values(
-            pipeline, X_row, max_samples=1
+        explainer, shap_vals, X_trans, feat_names, is_approx = compute_shap_values(
+            pipeline, X_row, max_samples=1, feature_names=feature_names
         )
-        return top_shap_drivers(shap_vals, feat_names, instance_idx=0, top_k=top_k)
-    except Exception:
-        return None
+        drivers = top_shap_drivers(shap_vals, feat_names, instance_idx=0, top_k=top_k)
+        if not drivers:
+            return None, is_approx, "No attribution values could be derived for this prediction."
+        return drivers, is_approx, None
+    except Exception as e:
+        # Full traceback for operators / logs; never expose raw stack to end users
+        tb = traceback.format_exc()
+        logger.error("SHAP explanation failed:\n%s", tb)
+        # Also print so Streamlit Cloud / container logs capture it
+        print(f"[SHAP ERROR] {type(e).__name__}: {e}\n{tb}", flush=True)
+        return None, False, "Explanation could not be computed for this prediction."
 
 
 # ---------------------------------------------------------------------------
@@ -165,8 +191,8 @@ def render_real_inputs() -> Dict[str, Any]:
 def main() -> None:
     st.title("Loan Default Prediction & Credit Risk Intelligence")
     st.caption(
-        "Production-oriented probability-of-default model · "
-        "Lending Club sample + synthetic fallback · SHAP explainability"
+        "Production-oriented probability-of-default model \u00b7 "
+        "Lending Club sample + synthetic fallback \u00b7 SHAP explainability"
     )
 
     artifact = load_artifact()
@@ -175,6 +201,8 @@ def main() -> None:
     threshold = float(artifact.get("threshold", 0.5))
     schema = artifact.get("schema", "synthetic")
     test_metrics = artifact.get("test_metrics", {})
+    # Prefer feature names stored with the model (correct schema) over module defaults
+    artifact_feature_names = artifact.get("feature_names")
 
     # Header metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -208,7 +236,7 @@ def main() -> None:
         tier, delta_color = get_risk_tier(proba)
         decision = "Likely to Default" if proba >= threshold else "Likely to Pay"
 
-        # Results
+        # Results \u2014 always shown even if SHAP fails
         st.subheader("Risk Assessment")
         m1, m2, m3 = st.columns(3)
         m1.metric("Default Probability", f"{proba:.1%}")
@@ -216,28 +244,52 @@ def main() -> None:
         m3.metric("Model Decision", decision)
 
         if proba >= RISK_MEDIUM:
-            st.error(f"**{tier}** — Probability of default is elevated. Manual review recommended.")
+            st.error(f"**{tier}** \u2014 Probability of default is elevated. Manual review recommended.")
         elif proba >= RISK_LOW:
-            st.warning(f"**{tier}** — Moderate risk. Additional verification may be useful.")
+            st.warning(f"**{tier}** \u2014 Moderate risk. Additional verification may be useful.")
         else:
-            st.success(f"**{tier}** — Applicant appears low risk under current model.")
+            st.success(f"**{tier}** \u2014 Applicant appears low risk under current model.")
 
-        # SHAP drivers
-        drivers = try_shap_drivers(pipeline, X, top_k=6)
+        # SHAP / attribution drivers
+        drivers, is_approx, shap_err = try_shap_drivers(
+            pipeline, X, feature_names=artifact_feature_names, top_k=6
+        )
         if drivers:
-            st.subheader("Top Risk Drivers (SHAP)")
-            st.caption("Features that most increased or decreased the predicted default probability for this applicant.")
-            driver_df = pd.DataFrame(drivers, columns=["Feature", "SHAP value"])
-            driver_df["Direction"] = driver_df["SHAP value"].apply(
-                lambda v: "↑ Increases risk" if v > 0 else "↓ Decreases risk"
+            title = "Top Risk Drivers"
+            if is_approx:
+                title += " (coefficient approximation)"
+            else:
+                title += " (SHAP)"
+            st.subheader(title)
+            if is_approx:
+                st.caption(
+                    "Approximate feature attributions for Logistic Regression "
+                    "(coefficient \u00d7 standardised feature value). "
+                    "Positive values increase predicted default probability; "
+                    "negative values decrease it. Not exact SHAP."
+                )
+            else:
+                st.caption(
+                    "Features that most increased or decreased the predicted "
+                    "default probability for this applicant (SHAP values)."
+                )
+            driver_df = pd.DataFrame(drivers, columns=["Feature", "Attribution"])
+            driver_df["Direction"] = driver_df["Attribution"].apply(
+                lambda v: "\u2191 Increases risk" if v > 0 else "\u2193 Decreases risk"
             )
             st.dataframe(
-                driver_df.style.format({"SHAP value": "{:.4f}"}),
+                driver_df.style.format({"Attribution": "{:.4f}"}),
                 use_container_width=True,
                 hide_index=True,
             )
         else:
-            st.info("SHAP explanation unavailable for this prediction (model or environment limitation).")
+            st.info(
+                shap_err
+                or "Explanation unavailable for this prediction (model or environment limitation)."
+            )
+            st.caption(
+                "Prediction, probability, risk tier and model decision above are still valid."
+            )
 
         with st.expander("Applicant input summary"):
             st.json(inputs)
