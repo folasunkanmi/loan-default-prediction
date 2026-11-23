@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loan-default-prediction"
-version = "1.1.1"
+version = "1.1.2"
 description = "Production-ready loan default prediction and credit risk intelligence system using real Lending Club data."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "Folasunkanmi", email = ""}
@@ -27,7 +27,6 @@ classifiers = [
     "Intended Audience :: Financial and Insurance Industry",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -36,7 +35,7 @@ classifiers = [
 dependencies = [
     "pandas>=2.0.0",
     "numpy>=1.24.0",
-    "scikit-learn>=1.3.0",
+    "scikit-learn>=1.8.0",
     "xgboost>=2.0.0",
     "lightgbm>=4.0.0",
     "imbalanced-learn>=0.11.0",
@@ -63,7 +62,7 @@ include = ["src*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
