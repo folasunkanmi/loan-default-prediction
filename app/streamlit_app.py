@@ -9,8 +9,16 @@ from __future__ import annotations
 
 import logging
 import pathlib
+import sys
 import traceback
 from typing import Any, Dict, List, Optional, Tuple
+
+# Ensure repository root is on sys.path so `src.*` imports work on Streamlit Cloud
+# (deployment CWD is often not the repo root).
+_PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1]
+_root_str = str(_PROJECT_ROOT)
+if _root_str not in sys.path:
+    sys.path.insert(0, _root_str)
 
 import joblib
 import numpy as np
@@ -34,7 +42,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1]
+PROJECT_ROOT = _PROJECT_ROOT
 MODEL_PATH = PROJECT_ROOT / "models" / "best_pipeline.joblib"
 
 logger = logging.getLogger(__name__)
