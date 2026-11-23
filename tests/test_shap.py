@@ -215,8 +215,12 @@ def test_saved_artifact_shap_if_present():
             "term": 36, "grade": "B", "emp_length": "5 years",
             "home_ownership": "RENT", "purpose": "debt_consolidation",
         }])
+    elif schema == "real":
+        from src.data.load_data import load_raw_data
+
+        row = load_raw_data().loc[:, art["raw_feature_names"]].iloc[[0]]
     else:
-        pytest.skip("Real-schema artefact; skip synthetic row test")
+        pytest.fail(f"Unknown saved artifact schema: {schema}")
 
     try:
         proba = float(pipe.predict_proba(row)[0, 1])
@@ -234,10 +238,12 @@ def test_saved_artifact_shap_if_present():
         assert names == list(feat_names) or len(names) == len(feat_names)
     drivers = top_shap_drivers(shap_vals, names, 0, top_k=6)
     assert len(drivers) >= 1
-    # No REAL-schema ghost names
-    for n, _ in drivers:
-        assert "borrower_score" not in n
-        assert "payment_inc_ratio" not in n
+    if schema == "synthetic":
+        for n, _ in drivers:
+            assert "borrower_score" not in n
+            assert "payment_inc_ratio" not in n
+    else:
+        assert "borrower_score" not in names
 
 
 def test_model_type_helpers():

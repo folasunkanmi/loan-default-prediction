@@ -18,7 +18,9 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-# Canonical feature groups for the REAL Lending Club sample
+# Canonical feature groups for the REAL Lending Club sample.
+# borrower_score is deliberately excluded: it is an issuer-derived score with
+# unclear point-in-time availability and could encode the target.
 REAL_NUMERIC = [
     "loan_amnt",
     "annual_inc",
@@ -29,7 +31,6 @@ REAL_NUMERIC = [
     "open_acc",
     "grade",
     "emp_length",
-    "borrower_score",
 ]
 REAL_CATEGORICAL = [
     "term",
@@ -92,31 +93,52 @@ def set_feature_lists(schema: str) -> None:
         CATEGORICAL_FEATURES = REAL_CATEGORICAL.copy()
 
 
-def build_preprocessor(schema: str | None = None) -> ColumnTransformer:
+def build_preprocessor(
+    schema: str | None = None,
+    feature_columns: List[str] | None = None,
+) -> ColumnTransformer:
     """
     Build a ColumnTransformer for the given schema.
     If schema is None, assumes feature lists have already been set.
     """
     if schema is not None:
-        set_feature_lists(schema)
+        numeric_features = SYNTH_NUMERIC if schema == "synthetic" else REAL_NUMERIC
+        categorical_features = (
+            SYNTH_CATEGORICAL if schema == "synthetic" else REAL_CATEGORICAL
+        )
+    else:
+        numeric_features = NUMERIC_FEATURES
+        categorical_features = CATEGORICAL_FEATURES
 
-    numeric_pipe = Pipeline(
-        steps=[
-            ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler()),
+    if feature_columns is not None:
+        selected = set(feature_columns)
+        numeric_features = [name for name in numeric_features if name in selected]
+        categorical_features = [
+            name for name in categorical_features if name in selected
         ]
-    )
-    categorical_pipe = Pipeline(
-        steps=[
-            ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-        ]
-    )
+
+    transformers = []
+    if numeric_features:
+        numeric_pipe = Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="median")),
+                ("scaler", StandardScaler()),
+            ]
+        )
+        transformers.append(("num", numeric_pipe, numeric_features))
+    if categorical_features:
+        categorical_pipe = Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="most_frequent")),
+                ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+            ]
+        )
+        transformers.append(("cat", categorical_pipe, categorical_features))
+    if not transformers:
+        raise ValueError("No supported feature columns are available for preprocessing.")
+
     return ColumnTransformer(
-        transformers=[
-            ("num", numeric_pipe, NUMERIC_FEATURES),
-            ("cat", categorical_pipe, CATEGORICAL_FEATURES),
-        ],
+        transformers=transformers,
         remainder="drop",
     )
 
@@ -162,13 +184,17 @@ def prepare_xy(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
     Detect schema, set feature lists, and return X, y.
     Only columns that actually exist are used.
     """
+    if TARGET not in df.columns:
+        raise ValueError(f"Dataset must contain target column {TARGET!r}.")
+    if df[TARGET].isna().any() or not set(df[TARGET].unique()).issubset({0, 1}):
+        raise ValueError("Target must contain non-null binary values 0 and 1.")
+
     schema = detect_schema(df)
     set_feature_lists(schema)
     num = [c for c in NUMERIC_FEATURES if c in df.columns]
     cat = [c for c in CATEGORICAL_FEATURES if c in df.columns]
-    # Keep module lists consistent with what we actually use
-    NUMERIC_FEATURES[:] = num
-    CATEGORICAL_FEATURES[:] = cat
+    if not num and not cat:
+        raise ValueError(f"No supported {schema} feature columns are present.")
     X = df[num + cat].copy()
-    y = df[TARGET].astype(int)
+    y = df[TARGET].astype("int8")
     return X, y

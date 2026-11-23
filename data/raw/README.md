@@ -1,8 +1,15 @@
 # Raw Data
 
-## Preferred: Real Lending Club sample
+## Preferred: Curated Lending Club sample
 
-**File:** `loan_data_lc.csv`
+**File:** `loan_data_lc.csv` (45,342 rows)
+
+This cleaned sample is balanced: 22,671 `default` and 22,671 `paid off`
+outcomes. It is not representative of the real lending population, and model
+metrics on it must not be interpreted as real-world Lending Club performance.
+The loader maps `outcome` to the binary target and rejects missing or unknown
+labels. It excludes `borrower_score` from features because its point-in-time
+availability is unclear and it could encode target information.
 
 **How to get it (recommended):**
 

@@ -1,37 +1,37 @@
 # Loan Default Prediction & Credit Risk Intelligence
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11–3.12](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.1.2-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.3-green.svg)](CHANGELOG.md)
 [![Citation](https://img.shields.io/badge/cite-CITATION.cff-lightgrey.svg)](CITATION.cff)
 
-**Production-oriented machine learning system for predicting the probability of loan default and supporting credit risk decisions.**
+**Educational machine-learning demonstration for loan-default prediction using a balanced, curated Lending Club sample.**
 
 | Field | Detail |
 |-------|--------|
 | **Domain** | Banking / FinTech / Credit Risk |
 | **Task** | Binary classification (Probability of Default) |
-| **Primary data** | Real Lending Club sample (~45 k loans) |
+| **Primary data** | Curated Lending Club sample (45,342 loans; balanced classes) |
 | **Models** | Logistic Regression · Random Forest · XGBoost · LightGBM |
 | **Explainability** | SHAP (TreeExplainer + LinearExplainer) |
 | **Interface** | Streamlit interactive scoring app (schema-aware) |
-| **Version** | 1.1.2 |
+| **Version** | 1.1.3 |
 
 ---
 
 ## Abstract
 
-This repository implements a complete, reproducible pipeline for **loan default prediction**. It loads a cleaned sample of historical Lending Club loans, applies leakage-free preprocessing, trains and compares four standard classifiers under class-imbalance handling, optimises the decision threshold on a validation set, and exposes predictions through an interactive Streamlit application. Global and local model explanations are supported via SHAP.
+This repository implements a reproducible demonstration pipeline for **loan default classification**. It loads a cleaned, balanced sample of historical Lending Club loans, fits preprocessing on training data, compares four classifiers using validation data, selects a decision threshold on validation data, and exposes predictions through Streamlit. SHAP explanations are available for the saved model.
 
 ---
 
 ## Key Features
 
-- Real public Lending Club data with clear provenance and one-command download
+- Curated public Lending Club sample with recorded source and SHA-256 provenance
 - End-to-end `sklearn` / `imblearn` pipelines (no train–test leakage)
 - Proper Train / Validation / Test protocol (model selection on validation only)
-- Comparison of linear and tree-based models with consistent metrics
-- SMOTE (training only) + class weights
+- Comparison of linear and tree-based models using validation PR-AUC
+- Training-only SMOTE when the training partition is imbalanced
 - Threshold tuning for F1 on the default class
 - SHAP explanations integrated in the Streamlit app
 - Schema-aware Streamlit app with risk tiers and per-applicant drivers
@@ -52,7 +52,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Requires Python 3.11+** (scikit-learn 1.8+ does not support Python 3.10).
+**Supported Python versions: 3.11 and 3.12.** (scikit-learn 1.8+ does not support Python 3.10.)
 
 ---
 
@@ -70,10 +70,10 @@ streamlit run app/streamlit_app.py
 
 ## Dataset
 
-**Primary source:** cleaned Lending Club sample (~45 342 loans).  
+**Primary source:** [cleaned Lending Club sample](https://github.com/gedeck/practical-statistics-for-data-scientists/raw/master/data/loan_data.csv.gz), containing 45,342 loans. It is a **balanced curated sample** (22,671 defaults and 22,671 paid-off loans), not a representative population sample.
 **Synthetic fallback:** `generate_loan_dataset` (~50k rows) for CI/offline work.
 
-Always check `reports/model_comparison.json` → `provenance.dataset_type`. Synthetic metrics are **not** real Lending Club performance (typical real ROC-AUC ~0.73).
+The target is constructed from `outcome` (`default` = 1, `paid off` = 0). `borrower_score` is excluded because its point-in-time availability is unclear and it could encode target information. Check `reports/model_comparison.json` → `provenance` for the dataset checksum, counts, and training environment.
 
 ---
 
@@ -81,14 +81,7 @@ Always check `reports/model_comparison.json` → `provenance.dataset_type`. Synt
 
 Stratified Train / Validation / Test. Selection and threshold tuning on **validation** only; final numbers on held-out **test**.
 
-Typical **real** Lending Club sample results (approximate):
-
-| Model | ROC-AUC | PR-AUC | F1 |
-|-------|---------|--------|-----|
-| Logistic Regression | ~0.73 | ~0.72 | ~0.71 |
-| Random Forest | ~0.73 | ~0.72 | ~0.71 |
-| XGBoost | ~0.73 | ~0.71 | ~0.71 |
-| LightGBM | ~0.73 | ~0.71 | ~0.70 |
+Measured metrics are produced by `python -m src.models.train` and recorded in [`reports/model_comparison.json`](reports/model_comparison.json), along with the untouched test-set confusion matrix and ROC/PR plot. See the [Phase 1 evaluation report](reports/PHASE1_REAL_DATA_EVALUATION_REPORT.md) for the exact run and interpretation. These results describe only this balanced curated sample and do **not** estimate real-world lending performance.
 
 ---
 
@@ -119,4 +112,4 @@ MIT — see [LICENSE](LICENSE).
 
 ---
 
-**Version 1.1.2 · November 2026**
+**Version 1.1.3 · November 2026**

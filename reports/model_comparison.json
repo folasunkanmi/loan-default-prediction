@@ -1,68 +1,96 @@
 {
   "provenance": {
-    "dataset_type": "synthetic",
-    "dataset_source": "src.data.generate_data.generate_loan_dataset",
-    "n_samples": 50000,
-    "default_rate_target": 0.2,
-    "schema": "synthetic",
-    "note": "Metrics below are from the SYNTHETIC dataset used for CI/offline training. They are NOT real Lending Club performance. Typical real Lending Club sample ROC-AUC is ~0.73 (see README).",
-    "selected_model": "logistic_regression",
-    "decision_threshold": 0.68,
-    "threshold_tuning": "F1 maximisation on validation set only",
-    "python_requires": ">=3.11",
-    "scikit_learn_trained_with": "1.9.1",
-    "report_generated_at": "2026-11-23T11:15:00Z",
-    "software_version": "1.1.2"
+    "dataset_type": "real",
+    "dataset_source": "https://github.com/gedeck/practical-statistics-for-data-scientists/raw/master/data/loan_data.csv.gz",
+    "source_file": "loan_data_lc.csv",
+    "source_sha256": "b41c02cbf45e07ca93bfa0e5af2e322fb084a4576777e70e7dbddc8ceb87ea37",
+    "schema": "real",
+    "n_samples": 45342,
+    "default_rate": 0.5,
+    "class_counts": {
+      "paid_off": 22671,
+      "default": 22671
+    },
+    "selected_model": "xgboost",
+    "selection_metric": "validation PR-AUC",
+    "decision_threshold": 0.32999999999999996,
+    "threshold_selection": "F1 maximisation on validation set only",
+    "split_sizes": {
+      "train": 27204,
+      "validation": 9069,
+      "test": 9069
+    },
+    "random_seed": 42,
+    "smote_applied": false,
+    "trained_at": "2026-11-23T14:01:47+00:00",
+    "python_version": "3.15.2",
+    "scikit_learn_version": "1.9.1",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "software_version": "1.1.3",
+    "note": "The real dataset is a balanced curated sample (50% default). Its metrics do not estimate real-world Lending Club lending performance."
+  },
+  "evaluation_protocol": {
+    "split_strategy": "stratified train/validation/test",
+    "model_selection": "validation PR-AUC only",
+    "threshold_selection": "validation F1 only",
+    "final_test_evaluation": "selected model evaluated once on untouched test data"
   },
   "validation": {
     "logistic_regression": {
-      "roc_auc": 0.7209606797884803,
-      "pr_auc": 0.709899379599968,
-      "precision": 0.5768571428571428,
-      "recall": 0.8904079382579934,
-      "f1": 0.7001300390117036,
+      "roc_auc": 0.6904244738637729,
+      "pr_auc": 0.6730828244584515,
+      "precision": 0.5552302368911366,
+      "recall": 0.9199558985667035,
+      "f1": 0.6925056021246576,
       "best_threshold": 0.32999999999999996
     },
     "random_forest": {
-      "roc_auc": 0.7255808739456727,
-      "pr_auc": 0.7106388149291065,
-      "precision": 0.5921131848284166,
-      "recall": 0.8674751929437706,
-      "f1": 0.7038196618659988,
-      "best_threshold": 0.38
+      "roc_auc": 0.698121068842104,
+      "pr_auc": 0.6781643210489652,
+      "precision": 0.5565023597273204,
+      "recall": 0.9360529217199559,
+      "f1": 0.6980185809422017,
+      "best_threshold": 0.33999999999999997
     },
     "xgboost": {
-      "roc_auc": 0.7265951145066383,
-      "pr_auc": 0.7090828084281917,
-      "precision": 0.5877752027809965,
-      "recall": 0.8948180815876516,
-      "f1": 0.7095025788967567,
-      "best_threshold": 0.32
+      "roc_auc": 0.6994922110001658,
+      "pr_auc": 0.680784228154177,
+      "precision": 0.5653715064758009,
+      "recall": 0.9144432194046307,
+      "f1": 0.6987363100252738,
+      "best_threshold": 0.32999999999999996
     },
     "lightgbm": {
-      "roc_auc": 0.7211191784332903,
-      "pr_auc": 0.700855304456423,
-      "precision": 0.5879493223335298,
-      "recall": 0.8800441014332966,
-      "f1": 0.7049368541905855,
-      "best_threshold": 0.32
+      "roc_auc": 0.695750787021884,
+      "pr_auc": 0.6750668117974292,
+      "precision": 0.5598307549914056,
+      "recall": 0.9336273428886439,
+      "f1": 0.6999504050256241,
+      "best_threshold": 0.31
     }
   },
   "test": {
-    "random_forest": {
-      "roc_auc": 0.7334706437068159,
-      "pr_auc": 0.7170333959271515,
-      "precision": 0.598816029143898,
-      "recall": 0.8700926334362594,
-      "f1": 0.7094047833123539,
-      "best_threshold": 0.38
+    "model": "xgboost",
+    "metrics": {
+      "roc_auc": 0.7084007929309313,
+      "pr_auc": 0.6854804611008867,
+      "precision": 0.5654943229022431,
+      "recall": 0.9007498897220997,
+      "f1": 0.6947941476692753,
+      "best_threshold": 0.32999999999999996
+    },
+    "confusion_matrix": {
+      "tn": 1397,
+      "fp": 3138,
+      "fn": 450,
+      "tp": 4084
     }
   },
-<<<<<<< HEAD
-  "selected_model": "random_forest"
+  "selected_model": "xgboost",
+  "decision_threshold": 0.32999999999999996,
+  "artifacts": {
+    "model": "models/best_pipeline.joblib",
+    "roc_pr_plot": "reports/roc_pr_curves_test.png",
+    "confusion_matrix_plot": "reports/confusion_matrix.png"
+  }
 }
-=======
-  "selected_model": "logistic_regression",
-  "decision_threshold": 0.68
-}
->>>>>>> b0501b4b3b154a4f86b59ba8f90285872bc7518a

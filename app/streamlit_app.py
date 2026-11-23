@@ -63,6 +63,17 @@ def load_artifact() -> Dict[str, Any]:
     if not isinstance(artifact, dict) or "pipeline" not in artifact:
         st.error("Unexpected model artefact format. Retrain the model.")
         st.stop()
+    try:
+        threshold = float(artifact["threshold"])
+        if not 0 < threshold < 1:
+            raise ValueError("the saved decision threshold is outside (0, 1)")
+        if artifact.get("schema") not in {"real", "synthetic"}:
+            raise ValueError("the saved model schema is missing or unsupported")
+        if not callable(getattr(artifact["pipeline"], "predict_proba", None)):
+            raise ValueError("the saved pipeline does not support probability predictions")
+    except (KeyError, TypeError, ValueError) as error:
+        st.error(f"Invalid model artefact: {error}. Retrain the model.")
+        st.stop()
     return artifact
 
 
@@ -170,7 +181,6 @@ def render_real_inputs() -> Dict[str, Any]:
     inputs["open_acc"] = st.sidebar.slider("Open Accounts", 1, 40, 10)
     inputs["grade"] = st.sidebar.slider("Grade (numeric)", 1.0, 7.0, 3.0, 0.1)
     inputs["emp_length"] = st.sidebar.slider("Employment Length (years)", 0.0, 10.0, 5.0, 0.5)
-    inputs["borrower_score"] = st.sidebar.slider("Borrower Score", 0.0, 1.0, 0.5, 0.01)
     inputs["purpose"] = st.sidebar.selectbox(
         "Purpose",
         [
@@ -199,8 +209,8 @@ def render_real_inputs() -> Dict[str, Any]:
 def main() -> None:
     st.title("Loan Default Prediction & Credit Risk Intelligence")
     st.caption(
-        "Production-oriented probability-of-default model \u00b7 "
-        "Lending Club sample + synthetic fallback \u00b7 SHAP explainability"
+        "Educational loan-default classification \u00b7 "
+        "curated Lending Club sample + synthetic fallback \u00b7 SHAP explanations"
     )
 
     artifact = load_artifact()
