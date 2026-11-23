@@ -1,4 +1,19 @@
 {
+  "provenance": {
+    "dataset_type": "synthetic",
+    "dataset_source": "src.data.generate_data.generate_loan_dataset",
+    "n_samples": 50000,
+    "default_rate_target": 0.2,
+    "schema": "synthetic",
+    "note": "Metrics below are from the SYNTHETIC dataset used for CI/offline training. They are NOT real Lending Club performance. Typical real Lending Club sample ROC-AUC is ~0.73 (see README).",
+    "selected_model": "logistic_regression",
+    "decision_threshold": 0.68,
+    "threshold_tuning": "F1 maximisation on validation set only",
+    "python_requires": ">=3.11",
+    "scikit_learn_trained_with": "1.9.1",
+    "report_generated_at": "2026-11-23T11:15:00Z",
+    "software_version": "1.1.2"
+  },
   "validation": {
     "logistic_regression": {
       "roc_auc": 0.7209606797884803,
@@ -43,5 +58,11 @@
       "best_threshold": 0.38
     }
   },
+<<<<<<< HEAD
   "selected_model": "random_forest"
 }
+=======
+  "selected_model": "logistic_regression",
+  "decision_threshold": 0.68
+}
+>>>>>>> b0501b4b3b154a4f86b59ba8f90285872bc7518a

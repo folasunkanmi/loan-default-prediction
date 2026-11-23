@@ -32,3 +32,16 @@ Thumbs.db
 # Reports (optional)
 # reports/*.png
 # reports/*.json
+
+# Secrets & credentials
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+secrets.yaml
+.streamlit/secrets.toml
+
+# Large / local artefacts (optional un-ignore if you intentionally track models)
+# models/*.joblib
+# data/raw/*.csv

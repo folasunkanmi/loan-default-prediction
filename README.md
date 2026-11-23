@@ -1,8 +1,8 @@
 # Loan Default Prediction & Credit Risk Intelligence
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.1.0-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.2-green.svg)](CHANGELOG.md)
 [![Citation](https://img.shields.io/badge/cite-CITATION.cff-lightgrey.svg)](CITATION.cff)
 
 **Production-oriented machine learning system for predicting the probability of loan default and supporting credit risk decisions.**
@@ -15,13 +15,13 @@
 | **Models** | Logistic Regression · Random Forest · XGBoost · LightGBM |
 | **Explainability** | SHAP (TreeExplainer + LinearExplainer) |
 | **Interface** | Streamlit interactive scoring app (schema-aware) |
-| **Version** | 1.1.0 |
+| **Version** | 1.1.2 |
 
 ---
 
 ## Abstract
 
-This repository implements a complete, reproducible pipeline for **loan default prediction**. It loads a cleaned sample of historical Lending Club loans, applies leakage-free preprocessing, trains and compares four standard classifiers under class-imbalance handling, optimises the decision threshold on a validation set, and exposes predictions through an interactive application. Global and local model explanations are supported via SHAP. The codebase is structured for both research reproducibility and portfolio / production demonstration.
+This repository implements a complete, reproducible pipeline for **loan default prediction**. It loads a cleaned sample of historical Lending Club loans, applies leakage-free preprocessing, trains and compares four standard classifiers under class-imbalance handling, optimises the decision threshold on a validation set, and exposes predictions through an interactive Streamlit application. Global and local model explanations are supported via SHAP.
 
 ---
 
@@ -33,11 +33,10 @@ This repository implements a complete, reproducible pipeline for **loan default 
 - Comparison of linear and tree-based models with consistent metrics
 - SMOTE (training only) + class weights
 - Threshold tuning for F1 on the default class
-- SHAP explanations (TreeExplainer + LinearExplainer) integrated in the app
-- **Schema-aware Streamlit app** with risk tiers and per-applicant SHAP drivers
-- Synthetic data generator for fully offline / CI runs
+- SHAP explanations integrated in the Streamlit app
+- Schema-aware Streamlit app with risk tiers and per-applicant drivers
+- Synthetic data generator for offline / CI runs
 - Centralised configuration, tests, and packaging (`pyproject.toml`)
-- Machine-readable citation (`CITATION.cff`)
 
 ---
 
@@ -48,158 +47,76 @@ git clone https://github.com/folasunkanmi/loan-default-prediction.git
 cd loan-default-prediction
 
 python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 
 pip install -r requirements.txt
-# or: pip install -e ".[app,dev]"
 ```
+
+**Requires Python 3.11+** (scikit-learn 1.8+ does not support Python 3.10).
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1. Get the real dataset (recommended)
-python scripts/download_data.py
+python scripts/download_data.py          # real data (recommended)
+# or: python -m src.data.generate_data  # synthetic offline fallback
 
-#    Offline fallback (no internet needed for data):
-#    python -m src.data.generate_data
-
-# 2. Train all models (Train/Val/Test protocol, no test leakage)
 python -m src.models.train
-
-# 3. Launch the interactive scoring application
 streamlit run app/streamlit_app.py
 ```
-
-The Streamlit app automatically detects whether the saved model was trained on the real Lending Club schema or the synthetic schema and presents the matching input fields.
 
 ---
 
 ## Dataset
 
-**Primary source**  
-Cleaned sample of Lending Club loans (~45 342 observations) derived from public Lending Club data releases and distributed via the [Practical Statistics for Data Scientists](https://github.com/gedeck/practical-statistics-for-data-scientists) repository.
+**Primary source:** cleaned Lending Club sample (~45 342 loans).  
+**Synthetic fallback:** `generate_loan_dataset` (~50k rows) for CI/offline work.
 
-| Attribute | Value |
-|-----------|-------|
-| Observations | ~45 342 |
-| Target | `default` (1) / paid off (0) — balanced in the sample |
-| Key features | loan amount, term, annual income, DTI, revolving utilisation, grade, employment length, purpose, home ownership, borrower score, etc. |
-
-**One-command download**
-
-```bash
-python scripts/download_data.py
-```
-
-This saves `data/raw/loan_data_lc.csv`.
-
-**Attribution**  
-Data ultimately originates from Lending Club public loan data. Users should respect the original terms of use of any upstream source.
-
-**Synthetic fallback**  
-`python -m src.data.generate_data` creates a statistically realistic synthetic dataset (default 50 k rows) for offline development, testing, and continuous integration. The training code auto-detects which schema is present.
+Always check `reports/model_comparison.json` → `provenance.dataset_type`. Synthetic metrics are **not** real Lending Club performance (typical real ROC-AUC ~0.73).
 
 ---
 
 ## Model Performance
 
-Stratified Train / Validation / Test split. Model selection and threshold tuning on **validation** only; final numbers on held-out **test**.
+Stratified Train / Validation / Test. Selection and threshold tuning on **validation** only; final numbers on held-out **test**.
 
-### Typical results on real Lending Club sample
+Typical **real** Lending Club sample results (approximate):
 
-| Model                  | ROC-AUC | PR-AUC | F1    |
-|------------------------|---------|--------|-------|
-| Logistic Regression    | ~0.73   | ~0.72  | ~0.71 |
-| Random Forest          | ~0.73   | ~0.72  | ~0.71 |
-| XGBoost                | ~0.73   | ~0.71  | ~0.71 |
-| LightGBM               | ~0.73   | ~0.71  | ~0.70 |
-
-Exact numbers vary slightly with environment and random seeds (fixed via `src/config/settings.py`). After training, see `reports/model_comparison.json` for the precise metrics of the current run.
-
-> **Note**: When only the synthetic generator is used, ROC-AUC is typically higher (~0.88–0.90) because the synthetic relationships are cleaner. Always prefer the real Lending Club sample for realistic performance claims.
+| Model | ROC-AUC | PR-AUC | F1 |
+|-------|---------|--------|-----|
+| Logistic Regression | ~0.73 | ~0.72 | ~0.71 |
+| Random Forest | ~0.73 | ~0.72 | ~0.71 |
+| XGBoost | ~0.73 | ~0.71 | ~0.71 |
+| LightGBM | ~0.73 | ~0.71 | ~0.70 |
 
 ---
 
-## Project Structure
+## Risk Tiers vs Decision Threshold
 
-```
-loan-default-prediction/
-├── app/                     # Streamlit scoring application (schema-aware)
-├── data/
-│   ├── raw/                 # loan_data_lc.csv (via download script)
-│   └── processed/           # train/val/test parquet (generated)
-├── models/                  # best_pipeline.joblib artefact
-├── notebooks/               # EDA + modelling demonstration
-├── reports/                 # model_comparison.json + plots
-├── scripts/
-│   └── download_data.py     # One-command real dataset download
-├── src/
-│   ├── config/              # seeds, paths, risk thresholds
-│   ├── data/                # loaders + synthetic generator
-│   ├── features/            # preprocessing (ColumnTransformer)
-│   ├── models/              # training & model selection
-│   ├── evaluation/          # metrics helpers
-│   └── explainability/      # SHAP utilities
-├── tests/                   # pytest suite
-├── CITATION.cff
-├── CHANGELOG.md
-├── LICENSE
-├── pyproject.toml
-└── README.md
-```
+| Concept | Source | Purpose |
+|---------|--------|---------|
+| Decision threshold | Model artefact (`threshold`, validation F1) | Binary decision in Streamlit |
+| Risk bands | `RISK_LOW=0.30`, `RISK_MEDIUM=0.55` | Display tiers only |
 
 ---
 
-## Reproducibility
+## Model governance & limitations
 
-- Global random seed: `RANDOM_SEED = 42`
-- Stratified Train / Validation / Test split
-- Model selection + threshold tuning on validation only
-- Test set evaluated once
-- SMOTE applied only inside the training pipeline
-
-```bash
-pytest tests/ -v
-```
+See [docs/MODEL_GOVERNANCE.md](docs/MODEL_GOVERNANCE.md) for what has been measured (and what has not): calibration, fairness, regulatory scope, and appropriate use. This release does **not** include FastAPI, monitoring, or automated retraining.
 
 ---
 
 ## Citation
 
-**BibTeX**
-
-```bibtex
-@software{folasunkanmi_loan_default_2026,
-  author       = {Folasunkanmi},
-  title        = {Loan Default Prediction \& Credit Risk Intelligence},
-  year         = {2026},
-  version      = {1.1.0},
-  url          = {https://github.com/folasunkanmi/loan-default-prediction},
-  note         = {Machine learning system for probability-of-default modelling on Lending Club data}
-}
-```
-
-**APA**  
-Folasunkanmi. (2026). *Loan Default Prediction & Credit Risk Intelligence* (Version 1.1.0) [Computer software]. https://github.com/folasunkanmi/loan-default-prediction
-
-Please also acknowledge the original Lending Club data source when using the real dataset.
+See [CITATION.cff](CITATION.cff).
 
 ---
 
 ## License
 
-MIT License – see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
 ---
 
-## Acknowledgements
-
-- Lending Club for originally releasing historical loan data
-- Nathan George / Peter Gedeck and the Practical Statistics for Data Scientists materials for the cleaned sample
-- The open-source communities behind scikit-learn, XGBoost, LightGBM, SHAP, and Streamlit
-
----
-
-**Version 1.1.0 · November 2026**
+**Version 1.1.2 · November 2026**
