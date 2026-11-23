@@ -2,7 +2,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.1.0-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.1-green.svg)](CHANGELOG.md)
 [![Citation](https://img.shields.io/badge/cite-CITATION.cff-lightgrey.svg)](CITATION.cff)
 
 **Production-oriented machine learning system for predicting the probability of loan default and supporting credit risk decisions.**
@@ -12,10 +12,10 @@
 | **Domain** | Banking / FinTech / Credit Risk |
 | **Task** | Binary classification (Probability of Default) |
 | **Primary data** | Real Lending Club sample (~45 k loans) |
-| **Models** | Logistic Regression · Random Forest · XGBoost · LightGBM |
+| **Models** | Logistic Regression \u00b7 Random Forest \u00b7 XGBoost \u00b7 LightGBM |
 | **Explainability** | SHAP (TreeExplainer + LinearExplainer) |
 | **Interface** | Streamlit interactive scoring app (schema-aware) |
-| **Version** | 1.1.0 |
+| **Version** | 1.1.1 |
 
 ---
 
@@ -28,7 +28,7 @@ This repository implements a complete, reproducible pipeline for **loan default 
 ## Key Features
 
 - Real public Lending Club data with clear provenance and one-command download
-- End-to-end `sklearn` / `imblearn` pipelines (no train–test leakage)
+- End-to-end `sklearn` / `imblearn` pipelines (no train\u2013test leakage)
 - Proper Train / Validation / Test protocol (model selection on validation only)
 - Comparison of linear and tree-based models with consistent metrics
 - SMOTE (training only) + class weights
@@ -48,7 +48,7 @@ git clone https://github.com/folasunkanmi/loan-default-prediction.git
 cd loan-default-prediction
 
 python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate          # Windows: .venv\\Scripts\\activate
 
 pip install -r requirements.txt
 # or: pip install -e ".[app,dev]"
@@ -84,7 +84,7 @@ Cleaned sample of Lending Club loans (~45 342 observations) derived from public 
 | Attribute | Value |
 |-----------|-------|
 | Observations | ~45 342 |
-| Target | `default` (1) / paid off (0) — balanced in the sample |
+| Target | `default` (1) / paid off (0) \u2014 balanced in the sample |
 | Key features | loan amount, term, annual income, DTI, revolving utilisation, grade, employment length, purpose, home ownership, borrower score, etc. |
 
 **One-command download**
@@ -118,7 +118,7 @@ Stratified Train / Validation / Test split. Model selection and threshold tuning
 
 Exact numbers vary slightly with environment and random seeds (fixed via `src/config/settings.py`). After training, see `reports/model_comparison.json` for the precise metrics of the current run.
 
-> **Note**: When only the synthetic generator is used, ROC-AUC is typically higher (~0.88–0.90) because the synthetic relationships are cleaner. Always prefer the real Lending Club sample for realistic performance claims.
+> **Note**: When only the synthetic generator is used, ROC-AUC is typically higher (~0.88\u20130.90) because the synthetic relationships are cleaner. Always prefer the real Lending Club sample for realistic performance claims.
 
 ---
 
@@ -126,28 +126,28 @@ Exact numbers vary slightly with environment and random seeds (fixed via `src/co
 
 ```
 loan-default-prediction/
-├── app/                     # Streamlit scoring application (schema-aware)
-├── data/
-│   ├── raw/                 # loan_data_lc.csv (via download script)
-│   └── processed/           # train/val/test parquet (generated)
-├── models/                  # best_pipeline.joblib artefact
-├── notebooks/               # EDA + modelling demonstration
-├── reports/                 # model_comparison.json + plots
-├── scripts/
-│   └── download_data.py     # One-command real dataset download
-├── src/
-│   ├── config/              # seeds, paths, risk thresholds
-│   ├── data/                # loaders + synthetic generator
-│   ├── features/            # preprocessing (ColumnTransformer)
-│   ├── models/              # training & model selection
-│   ├── evaluation/          # metrics helpers
-│   └── explainability/      # SHAP utilities
-├── tests/                   # pytest suite
-├── CITATION.cff
-├── CHANGELOG.md
-├── LICENSE
-├── pyproject.toml
-└── README.md
+\u251c\u2500\u2500 app/                     # Streamlit scoring application (schema-aware)
+\u251c\u2500\u2500 data/
+\u2502   \u251c\u2500\u2500 raw/                 # loan_data_lc.csv (via download script)
+\u2502   \u2514\u2500\u2500 processed/           # train/val/test parquet (generated)
+\u251c\u2500\u2500 models/                  # best_pipeline.joblib artefact
+\u251c\u2500\u2500 notebooks/               # EDA + modelling demonstration
+\u251c\u2500\u2500 reports/                 # model_comparison.json + plots
+\u251c\u2500\u2500 scripts/
+\u2502   \u2514\u2500\u2500 download_data.py     # One-command real dataset download
+\u251c\u2500\u2500 src/
+\u2502   \u251c\u2500\u2500 config/              # seeds, paths, risk thresholds
+\u2502   \u251c\u2500\u2500 data/                # loaders + synthetic generator
+\u2502   \u251c\u2500\u2500 features/            # preprocessing (ColumnTransformer)
+\u2502   \u251c\u2500\u2500 models/              # training & model selection
+\u2502   \u251c\u2500\u2500 evaluation/          # metrics helpers
+\u2502   \u2514\u2500\u2500 explainability/      # SHAP utilities
+\u251c\u2500\u2500 tests/                   # pytest suite
+\u251c\u2500\u2500 CITATION.cff
+\u251c\u2500\u2500 CHANGELOG.md
+\u251c\u2500\u2500 LICENSE
+\u251c\u2500\u2500 pyproject.toml
+\u2514\u2500\u2500 README.md
 ```
 
 ---
@@ -173,16 +173,16 @@ pytest tests/ -v
 ```bibtex
 @software{folasunkanmi_loan_default_2026,
   author       = {Folasunkanmi},
-  title        = {Loan Default Prediction \& Credit Risk Intelligence},
+  title        = {Loan Default Prediction \\& Credit Risk Intelligence},
   year         = {2026},
-  version      = {1.1.0},
+  version      = {1.1.1},
   url          = {https://github.com/folasunkanmi/loan-default-prediction},
   note         = {Machine learning system for probability-of-default modelling on Lending Club data}
 }
 ```
 
 **APA**  
-Folasunkanmi. (2026). *Loan Default Prediction & Credit Risk Intelligence* (Version 1.1.0) [Computer software]. https://github.com/folasunkanmi/loan-default-prediction
+Folasunkanmi. (2026). *Loan Default Prediction & Credit Risk Intelligence* (Version 1.1.1) [Computer software]. https://github.com/folasunkanmi/loan-default-prediction
 
 Please also acknowledge the original Lending Club data source when using the real dataset.
 
@@ -190,7 +190,7 @@ Please also acknowledge the original Lending Club data source when using the rea
 
 ## License
 
-MIT License – see [LICENSE](LICENSE).
+MIT License \u2013 see [LICENSE](LICENSE).
 
 ---
 
@@ -202,4 +202,4 @@ MIT License – see [LICENSE](LICENSE).
 
 ---
 
-**Version 1.1.0 · November 2026**
+**Version 1.1.1 \u00b7 November 2026**
