@@ -122,10 +122,38 @@ def build_preprocessor(schema: str | None = None) -> ColumnTransformer:
 
 
 def get_feature_names(preprocessor: ColumnTransformer) -> List[str]:
-    """Extract final feature names after transformation (useful for SHAP)."""
+    """
+    Extract final feature names after transformation (useful for SHAP).
+
+    Prefer the fitted transformer's own get_feature_names_out() so that names
+    always match the columns actually produced by this preprocessor instance,
+    regardless of the current module-level NUMERIC_FEATURES / CATEGORICAL_FEATURES.
+    Falls back to module-level lists only if the preprocessor is not yet fitted.
+    """
+    # Preferred path: derive names from the fitted ColumnTransformer
+    if hasattr(preprocessor, "get_feature_names_out"):
+        try:
+            raw = list(preprocessor.get_feature_names_out())
+            # Strip sklearn prefixes "num__" / "cat__" for cleaner SHAP labels
+            cleaned = []
+            for name in raw:
+                if name.startswith("num__"):
+                    cleaned.append(name[5:])
+                elif name.startswith("cat__"):
+                    cleaned.append(name[5:])
+                else:
+                    cleaned.append(name)
+            return cleaned
+        except Exception:
+            pass
+
+    # Fallback for unfitted preprocessor (uses current module-level lists)
     num_names = list(NUMERIC_FEATURES)
-    cat_encoder = preprocessor.named_transformers_["cat"]["onehot"]
-    cat_names = list(cat_encoder.get_feature_names_out(CATEGORICAL_FEATURES))
+    try:
+        cat_encoder = preprocessor.named_transformers_["cat"]["onehot"]
+        cat_names = list(cat_encoder.get_feature_names_out(CATEGORICAL_FEATURES))
+    except Exception:
+        cat_names = []
     return num_names + cat_names
 
 
